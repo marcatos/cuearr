@@ -27,11 +27,13 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		)
 	}()
 
-	targetOut := outDir
+	finalOut := outDir
+	stagingBase := outDir
 	if inPlace {
-		targetOut = filepath.Dir(job.ImagePath)
+		finalOut = filepath.Dir(job.ImagePath)
+		stagingBase = finalOut
 	} else {
-		targetOut = filepath.Join(outDir, albumOutputKey(job))
+		finalOut = filepath.Join(outDir, albumOutputKey(job))
 	}
 
 	running := job
@@ -48,6 +50,32 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		}
 	}
 
+	stagingStart := time.Now()
+	staging, err := PrepareStaging(stagingBase, job.ID)
+	if err != nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, err, log)
+	}
+	log.Info("run job staging prepared",
+		"job_id", job.ID,
+		"staging", staging,
+		"duration_ms", time.Since(stagingStart).Milliseconds(),
+	)
+	cleanup := func(runErr error) error {
+		cleanupStart := time.Now()
+		cleanupErr := CleanupStaging(staging)
+		log.Info("run job staging cleanup finished",
+			"job_id", job.ID,
+			"duration_ms", time.Since(cleanupStart).Milliseconds(),
+			"ok", cleanupErr == nil,
+		)
+		if cleanupErr != nil {
+			return errors.Join(runErr, cleanupErr)
+		}
+		return runErr
+	}
+
 	plan := domain.SplitPlan{
 		CuePath:   job.CuePath,
 		ImagePath: job.ImagePath,
@@ -55,36 +83,41 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 	}
 
 	splitStart := time.Now()
-	result, splitErr := r.Splitter.Split(ctx, plan, targetOut)
+	result, splitErr := r.Splitter.Split(ctx, plan, staging)
 	splitMs := time.Since(splitStart).Milliseconds()
 	log.Info("run job split finished", "job_id", job.ID, "duration_ms", splitMs, "ok", splitErr == nil)
 
 	finished := running
-	finished.OutDir = targetOut
+	finished.OutDir = finalOut
 
 	if splitErr != nil {
-		finished.FinishedAt = time.Now().UTC()
-		finished.Status = domain.JobFailed
-		finished.Error = splitErr.Error()
-		if result.Log != "" {
-			finished.Log = result.Log
-		}
-		if err := r.Store.Update(ctx, finished); err != nil {
-			return finished, err
-		}
-		log.Warn("run job failed", "job_id", job.ID, "error", splitErr.Error())
-		return finished, splitErr
+		splitErr = cleanup(splitErr)
+		return r.failJob(ctx, finished, result, splitErr, log)
 	}
 
 	if len(result.OutputFiles) == 0 {
-		return r.failJob(ctx, finished, result, errors.New("split produced no output files"), log)
+		runErr := cleanup(errors.New("split produced no output files"))
+		return r.failJob(ctx, finished, result, runErr, log)
 	}
 
 	imageInfo, err := r.Inspector.Inspect(ctx, job.ImagePath)
 	if err != nil {
-		return r.failJob(ctx, finished, result, fmt.Errorf("inspect source image %q: %w", job.ImagePath, err), log)
+		runErr := cleanup(fmt.Errorf("inspect source image %q: %w", job.ImagePath, err))
+		return r.failJob(ctx, finished, result, runErr, log)
 	}
 	if err := r.VerifySplit(ctx, job.CuePath, result.OutputFiles, imageInfo.Duration); err != nil {
+		runErr := cleanup(err)
+		return r.failJob(ctx, finished, result, runErr, log)
+	}
+
+	published, err := PublishTracks(staging, finalOut, result.OutputFiles)
+	if err != nil {
+		runErr := cleanup(err)
+		return r.failJob(ctx, finished, result, runErr, log)
+	}
+	result.OutputFiles = published
+	if err := cleanup(nil); err != nil {
+		rollbackPartialPublish(published)
 		return r.failJob(ctx, finished, result, err, log)
 	}
 

@@ -26,6 +26,17 @@ func (f *fakeFLACInspector) Inspect(_ context.Context, path string) (ports.FLACI
 	}
 	info, ok := f.info[path]
 	if !ok {
+		info, ok = f.info[filepath.Base(path)]
+	}
+	if !ok {
+		for candidate, candidateInfo := range f.info {
+			if filepath.Base(candidate) == filepath.Base(path) {
+				info, ok = candidateInfo, true
+				break
+			}
+		}
+	}
+	if !ok {
 		return ports.FLACInfo{}, fmt.Errorf("unexpected inspect %q", path)
 	}
 	return info, nil
@@ -45,7 +56,18 @@ type fakeFLACTagger struct {
 func (f *fakeFLACTagger) ApplyTags(_ context.Context, path string, tags ports.TrackTags) error {
 	f.calls = append(f.calls, appliedTags{path: path, tags: tags})
 	f.calledAt = time.Now().UTC()
-	return f.err[path]
+	if err := f.err[path]; err != nil {
+		return err
+	}
+	if err := f.err[filepath.Base(path)]; err != nil {
+		return err
+	}
+	for candidate, err := range f.err {
+		if filepath.Base(candidate) == filepath.Base(path) {
+			return err
+		}
+	}
+	return nil
 }
 
 func TestVerifySplit_AcceptsToleranceAndAppliesCueTags(t *testing.T) {
