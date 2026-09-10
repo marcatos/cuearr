@@ -14,6 +14,7 @@ import (
 
 type seqRunner struct {
 	responses []runResult
+	names     []string
 	calls     [][]string
 }
 
@@ -24,7 +25,8 @@ type runResult struct {
 	err      error
 }
 
-func (s *seqRunner) Run(_ context.Context, _ string, args ...string) (stdout, stderr string, exitCode int, err error) {
+func (s *seqRunner) Run(_ context.Context, name string, args ...string) (stdout, stderr string, exitCode int, err error) {
+	s.names = append(s.names, name)
 	s.calls = append(s.calls, append([]string(nil), args...))
 	if len(s.responses) == 0 {
 		return "", "unexpected run", 1, nil
@@ -38,6 +40,7 @@ func TestInspect_ParsesSampleRateAndTotalSamples(t *testing.T) {
 	runner := &seqRunner{responses: []runResult{
 		{stdout: "44100\n", exitCode: 0},
 		{stdout: "88200\n", exitCode: 0},
+		{exitCode: 0},
 	}}
 	c := metaflac.New(runner, "metaflac")
 
@@ -55,14 +58,37 @@ func TestInspect_ParsesSampleRateAndTotalSamples(t *testing.T) {
 	if info.Duration != wantDur {
 		t.Fatalf("Duration=%v want %v", info.Duration, wantDur)
 	}
-	if len(runner.calls) != 2 {
-		t.Fatalf("calls=%d want 2", len(runner.calls))
+	if len(runner.calls) != 3 {
+		t.Fatalf("calls=%d want 3", len(runner.calls))
 	}
 	if !reflect.DeepEqual(runner.calls[0], []string{"--show-sample-rate", "/music/track.flac"}) {
 		t.Fatalf("call0=%v", runner.calls[0])
 	}
 	if !reflect.DeepEqual(runner.calls[1], []string{"--show-total-samples", "/music/track.flac"}) {
 		t.Fatalf("call1=%v", runner.calls[1])
+	}
+	if runner.names[2] != "flac" {
+		t.Fatalf("decode binary=%q want flac", runner.names[2])
+	}
+	if !reflect.DeepEqual(runner.calls[2], []string{"-t", "--silent", "/music/track.flac"}) {
+		t.Fatalf("decode call=%v", runner.calls[2])
+	}
+}
+
+func TestInspect_DecodeFailureReturnsError(t *testing.T) {
+	runner := &seqRunner{responses: []runResult{
+		{stdout: "44100\n", exitCode: 0},
+		{stdout: "88200\n", exitCode: 0},
+		{stderr: "lost sync", exitCode: 1},
+	}}
+	c := metaflac.New(runner, "metaflac")
+
+	_, err := c.Inspect(context.Background(), "/music/corrupt.flac")
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	if !strings.Contains(err.Error(), "lost sync") {
+		t.Fatalf("decode stderr not in error: %v", err)
 	}
 }
 

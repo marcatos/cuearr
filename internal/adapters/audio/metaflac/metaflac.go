@@ -3,6 +3,7 @@ package metaflac
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,12 +14,14 @@ import (
 var tagFields = []string{"TITLE", "ARTIST", "ALBUM", "TRACKNUMBER"}
 
 type Client struct {
-	runner  ports.CommandRunner
-	binPath string
+	runner      ports.CommandRunner
+	binPath     string
+	flacBinPath string
 }
 
 func New(runner ports.CommandRunner, binPath string) *Client {
-	return &Client{runner: runner, binPath: binPath}
+	flacBinPath := filepath.Join(filepath.Dir(binPath), "flac"+filepath.Ext(binPath))
+	return &Client{runner: runner, binPath: binPath, flacBinPath: flacBinPath}
 }
 
 func (c *Client) Inspect(ctx context.Context, path string) (ports.FLACInfo, error) {
@@ -47,6 +50,14 @@ func (c *Client) Inspect(ctx context.Context, path string) (ports.FLACInfo, erro
 	totalSamples, err := strconv.ParseInt(strings.TrimSpace(samplesOut), 10, 64)
 	if err != nil {
 		return ports.FLACInfo{}, fmt.Errorf("metaflac total samples: parse %q: %w", strings.TrimSpace(samplesOut), err)
+	}
+
+	_, decodeErr, decodeCode, err := c.runner.Run(ctx, c.flacBinPath, "-t", "--silent", path)
+	if err != nil {
+		return ports.FLACInfo{}, fmt.Errorf("flac decode test: %w", err)
+	}
+	if decodeCode != 0 {
+		return ports.FLACInfo{}, fmt.Errorf("flac decode test: exit %d: %s", decodeCode, strings.TrimSpace(decodeErr))
 	}
 
 	duration := time.Duration(totalSamples) * time.Second / time.Duration(sampleRate)
