@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -124,3 +125,114 @@ func TestEnqueue_CreatesWhenFingerprintMissing(t *testing.T) {
 		t.Fatalf("fp=%q", got.Fingerprint)
 	}
 }
+
+// toctouJobStore simulates two enqueues racing: first Find misses, Create loses UNIQUE, second Find wins.
+type toctouJobStore struct {
+	job       domain.Job
+	findCalls int
+}
+
+func (s *toctouJobStore) Create(_ context.Context, _ domain.Job) (domain.Job, error) {
+	return domain.Job{}, domain.ErrConflict
+}
+
+func (s *toctouJobStore) Get(_ context.Context, id string) (domain.Job, error) {
+	if s.job.ID == id {
+		return s.job, nil
+	}
+	return domain.Job{}, domain.ErrNotFound
+}
+
+func (s *toctouJobStore) List(_ context.Context, _ int) ([]domain.Job, error) {
+	if s.job.ID == "" {
+		return nil, nil
+	}
+	return []domain.Job{s.job}, nil
+}
+
+func (s *toctouJobStore) Update(_ context.Context, job domain.Job) error {
+	s.job = job
+	return nil
+}
+
+func (s *toctouJobStore) FindByFingerprint(_ context.Context, fp string) (domain.Job, error) {
+	s.findCalls++
+	if s.findCalls == 1 {
+		return domain.Job{}, domain.ErrNotFound
+	}
+	if s.job.Fingerprint == fp {
+		return s.job, nil
+	}
+	return domain.Job{}, domain.ErrNotFound
+}
+
+var _ ports.JobStore = (*toctouJobStore)(nil)
+
+func TestEnqueue_IdempotentOnCreateFingerprintConflict(t *testing.T) {
+	ctx := context.Background()
+	winner := domain.Job{
+		ID:          "winner-id",
+		Fingerprint: "fp-race",
+		CuePath:     "/a/album.cue",
+		ImagePath:   "/a/album.flac",
+		Status:      domain.JobQueued,
+		Engine:      "shntool",
+		CreatedAt:   time.Now().UTC(),
+	}
+	store := &toctouJobStore{job: winner}
+	plan := domain.SplitPlan{
+		CuePath:     "/a/album.cue",
+		ImagePath:   "/a/album.flac",
+		WorkDir:     "/a",
+		Fingerprint: "fp-race",
+	}
+
+	got, created, err := app.Enqueue(ctx, store, plan, "shntool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("expected created=false after fingerprint conflict")
+	}
+	if got.ID != winner.ID {
+		t.Fatalf("id=%q want %q", got.ID, winner.ID)
+	}
+	if store.findCalls < 2 {
+		t.Fatalf("findCalls=%d want >=2", store.findCalls)
+	}
+}
+
+func TestEnqueue_CreateConflictWithoutExistingJobReturnsConflict(t *testing.T) {
+	ctx := context.Background()
+	store := &conflictOnlyStore{}
+	plan := domain.SplitPlan{Fingerprint: "orphan-fp", CuePath: "/x.cue", ImagePath: "/x.flac", WorkDir: "/"}
+
+	_, _, err := app.Enqueue(ctx, store, plan, "shntool")
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("err=%v want domain.ErrConflict", err)
+	}
+}
+
+type conflictOnlyStore struct{}
+
+func (conflictOnlyStore) Create(_ context.Context, _ domain.Job) (domain.Job, error) {
+	return domain.Job{}, domain.ErrConflict
+}
+
+func (conflictOnlyStore) Get(_ context.Context, _ string) (domain.Job, error) {
+	return domain.Job{}, domain.ErrNotFound
+}
+
+func (conflictOnlyStore) List(_ context.Context, _ int) ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (conflictOnlyStore) Update(_ context.Context, _ domain.Job) error {
+	return domain.ErrNotFound
+}
+
+func (conflictOnlyStore) FindByFingerprint(_ context.Context, _ string) (domain.Job, error) {
+	return domain.Job{}, domain.ErrNotFound
+}
+
+var _ ports.JobStore = (*conflictOnlyStore)(nil)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/marcatos/cuearr/internal/domain"
@@ -58,9 +59,17 @@ INSERT INTO jobs (
 		job.Log, job.Error, formatTime(job.CreatedAt), nullableTime(job.StartedAt), nullableTime(job.FinishedAt),
 	)
 	if err != nil {
+		if isFingerprintUniqueViolation(err) {
+			return domain.Job{}, domain.ErrConflict
+		}
 		return domain.Job{}, fmt.Errorf("insert job: %w", err)
 	}
 	return job, nil
+}
+
+func isFingerprintUniqueViolation(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") && strings.Contains(msg, "fingerprint")
 }
 
 func (s *Store) Get(ctx context.Context, id string) (domain.Job, error) {

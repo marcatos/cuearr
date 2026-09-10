@@ -47,6 +47,16 @@ func Enqueue(ctx context.Context, store ports.JobStore, plan domain.SplitPlan, e
 	}
 	created, err := store.Create(ctx, job)
 	if err != nil {
+		if errors.Is(err, domain.ErrConflict) {
+			existing, findErr := store.FindByFingerprint(ctx, plan.Fingerprint)
+			if findErr == nil {
+				return existing, false, nil
+			}
+			if errors.Is(findErr, domain.ErrNotFound) {
+				return domain.Job{}, false, err
+			}
+			return domain.Job{}, false, findErr
+		}
 		return domain.Job{}, false, err
 	}
 	return created, true, nil
