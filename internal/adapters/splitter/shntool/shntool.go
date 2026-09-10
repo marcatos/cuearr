@@ -62,7 +62,7 @@ func (s *Splitter) Split(ctx context.Context, plan domain.SplitPlan, outDir stri
 			fmt.Errorf("%w: %s", domain.ErrSplitFailed, strings.TrimSpace(stderr))
 	}
 
-	outputFiles, err := listOutputFlacFiles(outDir)
+	outputFiles, err := listOutputFlacFiles(outDir, plan.ImagePath)
 	if err != nil {
 		return ports.SplitResult{Log: log, Duration: duration}, err
 	}
@@ -78,10 +78,14 @@ func (s *Splitter) Split(ctx context.Context, plan domain.SplitPlan, outDir stri
 	}, nil
 }
 
-func listOutputFlacFiles(outDir string) ([]string, error) {
+func listOutputFlacFiles(outDir, sourceImage string) ([]string, error) {
 	entries, err := os.ReadDir(outDir)
 	if err != nil {
 		return nil, fmt.Errorf("list output FLAC files in %q: %w", outDir, err)
+	}
+	sourceAbs, err := filepath.Abs(sourceImage)
+	if err != nil {
+		return nil, fmt.Errorf("absolute path for source image %q: %w", sourceImage, err)
 	}
 	var names []string
 	for _, e := range entries {
@@ -99,6 +103,9 @@ func listOutputFlacFiles(outDir string) ([]string, error) {
 		abs, err := filepath.Abs(filepath.Join(outDir, name))
 		if err != nil {
 			return nil, fmt.Errorf("absolute path for output FLAC %q: %w", name, err)
+		}
+		if abs == sourceAbs {
+			continue
 		}
 		files = append(files, abs)
 	}

@@ -122,6 +122,38 @@ func TestShntoolSplit_PopulatesOutputFilesSorted(t *testing.T) {
 	}
 }
 
+func TestShntoolSplit_ExcludesSourceImageFromInPlaceOutputs(t *testing.T) {
+	outDir := t.TempDir()
+	sourceImage := filepath.Join(outDir, "album.flac")
+	for _, path := range []string{
+		sourceImage,
+		filepath.Join(outDir, "split-track01.flac"),
+		filepath.Join(outDir, "split-track02.flac"),
+	} {
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := shntool.New(&fakeRunner{exitCode: 0}, "shntool")
+	res, err := s.Split(context.Background(), domain.SplitPlan{
+		CuePath:   filepath.Join(outDir, "album.cue"),
+		ImagePath: sourceImage,
+		WorkDir:   outDir,
+	}, outDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		filepath.Join(outDir, "split-track01.flac"),
+		filepath.Join(outDir, "split-track02.flac"),
+	}
+	if !reflect.DeepEqual(res.OutputFiles, want) {
+		t.Fatalf("OutputFiles=%v want=%v", res.OutputFiles, want)
+	}
+}
+
 func TestShntoolSplit_NoOutputFlacReturnsErrSplitFailed(t *testing.T) {
 	fake := &fakeRunner{exitCode: 0, stdout: "ok"}
 	s := shntool.New(fake, "shntool")
