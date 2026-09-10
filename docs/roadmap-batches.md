@@ -32,10 +32,14 @@ Project Status: **Todo** = active ready · **Blocked** = waiting on dependency �
 
 ## Active priorities (now)
 
-No batch is designated active here; the project board is canonical for the
-next selected priority.
+**B4 — Real-case integration** (Todo on the board):
 
-**Completed:** **B1**–**B3** and **B6** ([competitive comparison](competitive-comparison.md)).
+1. [#26](https://github.com/marcatos/cuearr/issues/26) Lidarr connector beyond webhook if blocked imports need it  
+2. [#27](https://github.com/marcatos/cuearr/issues/27) formats / CUE variants only from repeated tester demand  
+
+**Backlog:** **B5** ([#28](https://github.com/marcatos/cuearr/issues/28) [#29](https://github.com/marcatos/cuearr/issues/29) [#10](https://github.com/marcatos/cuearr/issues/10)).
+
+**Completed:** **B1**–**B3** and **B6** ([competitive comparison](competitive-comparison.md)) through **v0.4.0**.
 
 ## Work order inside B3 (reference)
 

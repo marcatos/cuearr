@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/marcatos/cuearr/releases/tag/v0.1.0"><img alt="release" src="https://img.shields.io/github/v/release/marcatos/cuearr?include_prereleases&amp;label=release"/></a>
+  <a href="https://github.com/marcatos/cuearr/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/marcatos/cuearr?include_prereleases&amp;label=release"/></a>
   <a href="https://github.com/marcatos/cuearr/pkgs/container/cuearr"><img alt="ghcr" src="https://img.shields.io/badge/ghcr-cuearr-0B3D4A"/></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-3ECFB2"/></a>
   <a href="https://github.com/marcatos/cuearr/issues"><img alt="issues" src="https://img.shields.io/github/issues/marcatos/cuearr"/></a>
@@ -18,11 +18,15 @@
 
 ## Status
 
-**v0.4.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). Ships B1–B3 plus B6 positioning docs. See [releasing](docs/releasing.md).
+**v0.4.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
+
+**Shipped:** **B1**–**B3** (verified splits, [file reliability](docs/file-reliability.md), [assisted beta](docs/beta.md)) · **B6** [competitive comparison](docs/competitive-comparison.md)
+
+**Next (B4):** real-case Lidarr integration — [#26](https://github.com/marcatos/cuearr/issues/26) connector beyond webhook · [#27](https://github.com/marcatos/cuearr/issues/27) formats only from repeated demand. Board: [Active now](https://github.com/users/marcatos/projects/1/views/4).
+
+**Later (B5):** [#28](https://github.com/marcatos/cuearr/issues/28) corpus/SQLite · [#29](https://github.com/marcatos/cuearr/issues/29) Unraid verified · [#10](https://github.com/marcatos/cuearr/issues/10) native engine (deferred).
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
-
-**Positioning:** **B6 is complete** with a documented [comparison against Unpackerr, Splittarr, and Flacon](docs/competitive-comparison.md). **B1**–**B3** shipped through v0.3.0 ([file reliability](docs/file-reliability.md), [beta](docs/beta.md)); B6 docs land in v0.4.0.
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
