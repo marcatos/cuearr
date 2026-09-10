@@ -28,6 +28,41 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (stdout
 	return f.stdout, f.stderr, f.exitCode, f.err
 }
 
+func TestShntoolAvailable_ProbesWithHelp(t *testing.T) {
+	fake := &fakeRunner{exitCode: 1, stderr: "shntool: usage information"}
+	s := shntool.New(fake, "shntool")
+	if err := s.Available(context.Background()); err != nil {
+		t.Fatalf("Available: %v", err)
+	}
+	if fake.lastName != "shntool" {
+		t.Fatalf("bin=%s", fake.lastName)
+	}
+	if len(fake.lastArgs) != 1 || fake.lastArgs[0] != "-h" {
+		t.Fatalf("args=%v want [-h]", fake.lastArgs)
+	}
+}
+
+func TestShntoolAvailable_NonzeroExitOKWhenOutputMentionsShntool(t *testing.T) {
+	s := shntool.New(&fakeRunner{exitCode: 1, stderr: "SHNTOOL split utility"}, "shntool")
+	if err := s.Available(context.Background()); err != nil {
+		t.Fatalf("Available: %v", err)
+	}
+}
+
+func TestShntoolAvailable_FailsWhenOutputMissingShntool(t *testing.T) {
+	s := shntool.New(&fakeRunner{exitCode: 0, stdout: "unknown command"}, "shntool")
+	if err := s.Available(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestShntoolAvailable_FailsOnRunError(t *testing.T) {
+	s := shntool.New(&fakeRunner{err: errors.New("exec failed")}, "shntool")
+	if err := s.Available(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestShntoolSplit_BuildsExpectedArgs(t *testing.T) {
 	fake := &fakeRunner{exitCode: 0, stdout: "ok"}
 	s := shntool.New(fake, "shntool")

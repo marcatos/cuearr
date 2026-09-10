@@ -27,12 +27,13 @@ func (s *Splitter) Name() string {
 }
 
 func (s *Splitter) Available(ctx context.Context) error {
-	_, stderr, exitCode, err := s.runner.Run(ctx, s.binPath, "version")
+	stdout, stderr, _, err := s.runner.Run(ctx, s.binPath, "-h")
 	if err != nil {
 		return fmt.Errorf("shntool available: %w", err)
 	}
-	if exitCode != 0 {
-		return fmt.Errorf("shntool available: exit %d: %s", exitCode, stderr)
+	combined := stdout + stderr
+	if !strings.Contains(strings.ToLower(combined), "shntool") {
+		return fmt.Errorf("shntool available: help output did not mention shntool")
 	}
 	return nil
 }
