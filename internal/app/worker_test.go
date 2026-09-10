@@ -144,6 +144,50 @@ func TestWorker_FailedJobStopsAfterConfiguredTotalAttempts(t *testing.T) {
 	t.Fatal("job did not reach permanent failure")
 }
 
+func TestWorker_ManualRequeueAfterExhaustionRunsAgain(t *testing.T) {
+	at := time.Date(2026, 9, 10, 18, 0, 0, 0, time.UTC)
+	failed := domain.Job{
+		ID: "job-manual-retry", Fingerprint: "fp-manual-retry", Status: domain.JobFailed,
+		CuePath: writeCue(t, oneTrackCue), ImagePath: "/a.flac", CreatedAt: at,
+		AttemptCount: 3,
+		AttemptLog: []domain.JobAttempt{
+			{Number: 1, At: at, Error: "a"},
+			{Number: 2, At: at, Error: "b"},
+			{Number: 3, At: at, Error: "c"},
+		},
+		Error:      "c",
+		FinishedAt: at,
+	}
+	requeued, err := domain.RequeueFailedJob(failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeJobStore{byFP: map[string]domain.Job{requeued.Fingerprint: requeued}}
+	observed := make(chan int, 1)
+	splitter := &attemptObservingSplitter{store: store, jobID: failed.ID, observed: observed}
+	worker := &app.Worker{
+		Store: store, Runtime: app.NewRuntimeConfig(domain.Settings{MaxRetries: 3}, splitter),
+		Preflight: &fakePreflight{}, OutDir: t.TempDir(), Interval: 10 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- worker.Run(ctx) }()
+
+	select {
+	case count := <-observed:
+		cancel()
+		<-done
+		if count != 1 {
+			t.Fatalf("attempt count at split start=%d, want 1", count)
+		}
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("manual retry did not re-run work")
+	}
+}
+
 func TestWorker_PersistsAttemptBeforeSplitterStarts(t *testing.T) {
 	job := domain.Job{
 		ID: "job-attempt-start", Fingerprint: "fp-attempt-start", Status: domain.JobQueued,
