@@ -53,13 +53,15 @@ func ApplyAttemptFailure(job Job, errMsg string, at time.Time, maxAttempts int) 
 	return job
 }
 
-// RequeueFailedJob moves a manually retried job back to the queue. Attempt
-// history is preserved; current error and log are cleared.
+// RequeueFailedJob moves a manually retried job back to the queue. The retry
+// budget is reset while attempt history is preserved; current error and log
+// are cleared.
 func RequeueFailedJob(job Job) (Job, error) {
 	if job.Status != JobFailed {
 		return Job{}, ErrConflict
 	}
 	job.Status = JobQueued
+	job.AttemptCount = 0
 	job.Error = ""
 	job.Log = ""
 	job.StartedAt = time.Time{}

@@ -72,7 +72,7 @@ func TestRequeueFailedJob_OnlyFailed(t *testing.T) {
 	if requeued.Status != domain.JobQueued || requeued.Error != "" || requeued.Log != "" {
 		t.Fatalf("requeued=%+v", requeued)
 	}
-	if requeued.AttemptCount != 3 || len(requeued.AttemptLog) != 3 {
+	if requeued.AttemptCount != 0 || len(requeued.AttemptLog) != 3 {
 		t.Fatalf("attempt history=%+v", requeued)
 	}
 	if !requeued.StartedAt.IsZero() || !requeued.FinishedAt.IsZero() {

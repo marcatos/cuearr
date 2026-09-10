@@ -58,11 +58,11 @@ func TestRetryJob_RequeuesFailed(t *testing.T) {
 	if body.Status != domain.JobQueued || body.Error != "" || body.Log != "" {
 		t.Fatalf("body=%+v", body)
 	}
-	if body.AttemptCount != 2 || len(body.Attempts) != 2 || body.Attempts[1].Error != "permission denied" {
+	if body.AttemptCount != 0 || len(body.Attempts) != 2 || body.Attempts[1].Error != "permission denied" {
 		t.Fatalf("attempts=%+v", body.Attempts)
 	}
 	stored := jobs.jobs["job-failed"]
-	if stored.Status != domain.JobQueued {
+	if stored.Status != domain.JobQueued || stored.AttemptCount != 0 {
 		t.Fatalf("stored=%+v", stored)
 	}
 }
