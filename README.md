@@ -22,23 +22,28 @@
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Active now:** **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). **B1**–**B3** shipped through v0.3.0 ([file reliability](docs/file-reliability.md), [beta](docs/beta.md)).
+**Positioning:** **B6 is complete** with a documented [comparison against Unpackerr, Splittarr, and Flacon](docs/competitive-comparison.md). **B1**–**B3** shipped through v0.3.0 ([file reliability](docs/file-reliability.md), [beta](docs/beta.md)); B6 is a documentation milestone completed after that release.
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
 **Beta (B3):** [Recruitment + reporting](docs/beta.md) · [10-minute onboarding](docs/onboarding.md) — synthetic fixture first, then signup issue for the assisted cohort.
 
-## Why Cuearr exists
+## Why choose Cuearr
 
 Many music downloads still ship as **one big FLAC (or WAV/APE) + a `.cue` sheet**. That layout is fine for archival players. It is a poor fit for the *arr + Plex stack:
 
-| Without Cuearr | With Cuearr (goal) |
-|----------------|---------------------|
+| Without an automated companion | With Cuearr (goal) |
+|--------------------------------|---------------------|
 | Lidarr often sees a single “track” or fails quality/match expectations | Per-track FLACs under `out_dir` ([verified split cases](docs/compatibility-matrix.md)) |
 | Plex Music shows one file, weak track browsing | Intended: per-track library after Lidarr import ([Plex not verified in CI](docs/lidarr-plex-demo.md#plex-music)) |
-| Manual `shntool` / Flacon every time | Watch folder + Lidarr webhook/script ([demo path](docs/lidarr-plex-demo.md)) |
+| Manual splitting for each album | Watch folder + Lidarr webhook/script ([demo path](docs/lidarr-plex-demo.md)) |
 
-Cuearr focuses on **verified** splits and a clear Lidarr-oriented path (see strategy: compare vs Unpackerr / Splittarr / Flacon before expanding scope). Flow: watch (or hook) → split with **shntool** → drop ready tracks where Lidarr looks.
+Cuearr is one of several FLAC/CUE tools. Choose it as a dedicated Lidarr
+companion when verified completion, staging-before-publish, content
+fingerprinting, and actionable diagnostics matter. See the
+[competitive comparison](docs/competitive-comparison.md) for when Unpackerr,
+Splittarr, or Flacon is a better fit. Flow: watch (or hook) → split with
+**shntool** → verify → publish ready tracks where Lidarr looks.
 
 ## What it does (v0.1)
 
