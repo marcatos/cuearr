@@ -101,6 +101,27 @@ We also did not run a live Lidarr download/import or Plex visibility test for
 any product, and did not measure setup time, throughput, CPU, or memory. A
 `not-run` cell records an evidence gap, not a claim that the product fails.
 
+## Positioning conclusion
+
+Cuearr is **not** the only FLAC/CUE splitter. It is preferable when a homelab
+operator wants a dedicated Lidarr companion that reports completion only after
+checking track count, decode integrity, duration, and tags; publishes from
+staging only after those checks; fingerprints input content to avoid accidental
+duplicate work; and exposes structured, redacted diagnostics.
+
+Choose **Unpackerr** when FLAC/CUE splitting should be one capability inside an
+existing, broader Starr extraction service. Choose **Splittarr** when the
+preferred workflow is to watch Lidarr's `importFailed` queue directly and use
+its focused history and cleanup model. Choose **Flacon** for interactive
+desktop extraction, wider input/output format support, and hands-on tag editing.
+
+Cuearr should continue as the narrow, verified Lidarr companion rather than
+claiming a missing category or broadening into a general converter. Expansion
+should follow real adoption evidence. Current proven and assumed boundaries are
+listed in the [compatibility matrix](compatibility-matrix.md), while the
+[Lidarr/Plex demo path](lidarr-plex-demo.md) shows the intended integration and
+its still-unverified live steps.
+
 ## Sources
 
 - [C1] [Cuearr compatibility matrix](compatibility-matrix.md)
