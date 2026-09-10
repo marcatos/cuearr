@@ -23,8 +23,9 @@ persistence:
     existingClaim: ""
   watch:
     enabled: true
-    # hostPath: mount a node directory (typical with hostPath volumes for media libraries)
-    # pvc: request a PersistentVolumeClaim
+    # hostPath: mount a node directory (typical with hostPath volumes for media libraries).
+    # DirectoryOrCreate paths are root-owned; enable hostPathOwnershipInit below so UID 1000 can write.
+    # pvc: request a PersistentVolumeClaim (fsGroup applies; no init container needed)
     mode: hostPath
     mountPath: /watch
     hostPath: /srv/cuearr/watch
@@ -65,6 +66,12 @@ tolerations: []
 affinity: {}
 
 podAnnotations: {}
+
+# When watch/out use hostPath, fsGroup does not fix node directory ownership.
+# This init container chowns those mount paths to runAsUser/runAsGroup before cuearr starts.
+hostPathOwnershipInit:
+  enabled: true
+  image: busybox:1.36.1
 
 podSecurityContext:
   runAsUser: 1000

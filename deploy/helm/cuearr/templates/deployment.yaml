@@ -1,5 +1,10 @@
 {{- $authSecret := include "cuearr.authSecretName" . -}}
 {{- $hasAuthSecret := or .Values.auth.existingSecret (or .Values.auth.initialPassword .Values.auth.apiKey .Values.oidc.enabled .Values.oidc.issuer .Values.oidc.clientId .Values.oidc.clientSecret .Values.oidc.redirectUrl .Values.oidc.allowedEmailDomains) -}}
+{{- $watchHostPath := and .Values.persistence.watch.enabled (eq .Values.persistence.watch.mode "hostPath") -}}
+{{- $outHostPath := and .Values.persistence.out.enabled (eq .Values.persistence.out.mode "hostPath") -}}
+{{- $hostPathOwnershipInit := and .Values.hostPathOwnershipInit.enabled (or $watchHostPath $outHostPath) -}}
+{{- $runAsUser := default 1000 .Values.podSecurityContext.runAsUser -}}
+{{- $runAsGroup := default 1000 .Values.podSecurityContext.runAsGroup -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,6 +32,36 @@ spec:
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $hostPathOwnershipInit }}
+      initContainers:
+        - name: hostpath-ownership
+          image: {{ required "hostPathOwnershipInit.image is required when hostPathOwnershipInit.enabled is true" .Values.hostPathOwnershipInit.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          command:
+            - sh
+            - -c
+          args:
+            - |
+              set -e
+              {{- if $watchHostPath }}
+              chown -R {{ $runAsUser }}:{{ $runAsGroup }} {{ .Values.persistence.watch.mountPath }}
+              {{- end }}
+              {{- if $outHostPath }}
+              chown -R {{ $runAsUser }}:{{ $runAsGroup }} {{ .Values.persistence.out.mountPath }}
+              {{- end }}
+          volumeMounts:
+            {{- if $watchHostPath }}
+            - name: watch
+              mountPath: {{ .Values.persistence.watch.mountPath }}
+            {{- end }}
+            {{- if $outHostPath }}
+            - name: out
+              mountPath: {{ .Values.persistence.out.mountPath }}
+            {{- end }}
       {{- end }}
       containers:
         - name: cuearr

@@ -155,6 +155,58 @@ func TestWatcher_NestedAlbumDirTriggersOnDir(t *testing.T) {
 	}
 }
 
+func TestWatcher_AtomicallyCreatedNestedAlbumDirectoryTriggersOnDir(t *testing.T) {
+	root := t.TempDir()
+	staging := t.TempDir()
+	stagedArtist := filepath.Join(staging, "Artist")
+	stagedAlbum := filepath.Join(stagedArtist, "Album")
+	if err := os.MkdirAll(stagedAlbum, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagedAlbum, "album.cue"), []byte(`FILE "album.flac" WAVE`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagedAlbum, "album.flac"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	called := make(chan string, 2)
+	w, err := fs.NewWatcher([]string{root}, func(dir string) error {
+		called <- dir
+		return nil
+	}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- w.Start(ctx) }()
+	time.Sleep(200 * time.Millisecond)
+
+	if err := os.Rename(stagedArtist, filepath.Join(root, "Artist")); err != nil {
+		t.Fatal(err)
+	}
+	wantAlbum := filepath.Clean(filepath.Join(root, "Artist", "Album"))
+	select {
+	case got := <-called:
+		if got != wantAlbum {
+			t.Fatalf("onDir=%q want %q", got, wantAlbum)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for atomically-created nested album")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && err != context.Canceled {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not stop")
+	}
+}
+
 func TestWatcher_AtomicallyCreatedAlbumDirectoryTriggersOnDir(t *testing.T) {
 	root := t.TempDir()
 	staging := t.TempDir()

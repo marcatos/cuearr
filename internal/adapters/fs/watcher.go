@@ -93,7 +93,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 					if err := addWatchTree(fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
 						w.log.Warn("watch add failed for new directory", "dir", ev.Name, "err", err)
 					} else {
-						debounce.schedule(filepath.Clean(ev.Name))
+						scheduleCueDirsUnder(debounce, ev.Name, DefaultScanDepth-depth)
 					}
 					continue
 				}
@@ -108,6 +108,26 @@ func (w *Watcher) Start(ctx context.Context) error {
 			dir := ResolveAlbumDir(ev.Name)
 			debounce.schedule(dir)
 		}
+	}
+}
+
+func scheduleCueDirsUnder(debounce *debouncer, dir string, maxDepth int) {
+	dir = filepath.Clean(dir)
+	if maxDepth < 0 {
+		maxDepth = 0
+	}
+	seen := make(map[string]struct{})
+	var cueDirs []string
+	if err := walkCueDirs(dir, 0, maxDepth, seen, &cueDirs); err != nil {
+		debounce.schedule(dir)
+		return
+	}
+	if len(cueDirs) == 0 {
+		debounce.schedule(dir)
+		return
+	}
+	for _, d := range cueDirs {
+		debounce.schedule(d)
 	}
 }
 
