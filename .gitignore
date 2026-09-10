@@ -35,3 +35,5 @@ cuearr.db-*
 # Agent / SDD scratch (never commit)
 task-*-report.md
 *-review-package.md
+
+.worktrees/
