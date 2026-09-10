@@ -26,7 +26,7 @@
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
-**Beta onboarding:** [10-minute path](docs/onboarding.md) — Compose watch/out, synthetic fixture, expect `completed` + tracks in `out`.
+**Beta (B3):** [Recruitment + reporting](docs/beta.md) · [10-minute onboarding](docs/onboarding.md) — synthetic fixture first, then signup issue for the assisted cohort.
 
 ## Why Cuearr exists
 
