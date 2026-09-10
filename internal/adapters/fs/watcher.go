@@ -3,6 +3,7 @@ package fs
 import (
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -54,11 +55,10 @@ func (w *Watcher) Start(ctx context.Context) error {
 	defer fsw.Close()
 
 	for _, dir := range w.dirs {
-		if err := fsw.Add(dir); err != nil {
+		if err := addWatchTree(fsw, w.log, dir, 0, DefaultScanDepth); err != nil {
 			w.log.Error("watch add failed", "dir", dir, "err", err)
 			return err
 		}
-		w.log.Info("watching directory", "dir", dir)
 	}
 
 	debounce := newDebouncer(w.wait, func(dir string) {
@@ -82,6 +82,15 @@ func (w *Watcher) Start(ctx context.Context) error {
 		case ev, ok := <-fsw.Events:
 			if !ok {
 				return nil
+			}
+			if ev.Op&fsnotify.Create != 0 {
+				if info, err := os.Stat(ev.Name); err == nil && info.IsDir() {
+					if err := fsw.Add(ev.Name); err != nil {
+						w.log.Warn("watch add failed for new directory", "dir", ev.Name, "err", err)
+					} else {
+						w.log.Info("watching directory", "dir", ev.Name)
+					}
+				}
 			}
 			if ev.Op&(fsnotify.Create|fsnotify.Write) == 0 {
 				continue
@@ -132,4 +141,28 @@ func (d *debouncer) stop() {
 	for _, t := range d.timers {
 		t.Stop()
 	}
+}
+
+func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
+	if err := fsw.Add(dir); err != nil {
+		return err
+	}
+	log.Info("watching directory", "dir", dir)
+	if depth >= maxDepth {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		child := filepath.Join(dir, e.Name())
+		if err := addWatchTree(fsw, log, child, depth+1, maxDepth); err != nil {
+			return err
+		}
+	}
+	return nil
 }
