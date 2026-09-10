@@ -33,6 +33,30 @@ func TestEmailDomainAllowed(t *testing.T) {
 	}
 }
 
+func TestOIDCEmailAllowed_RequiresVerificationForDomainAllowList(t *testing.T) {
+	t.Parallel()
+	verified := true
+	unverified := false
+	tests := []struct {
+		name     string
+		verified *bool
+		allowed  []string
+		want     bool
+	}{
+		{name: "verified", verified: &verified, allowed: []string{"example.com"}, want: true},
+		{name: "false", verified: &unverified, allowed: []string{"example.com"}, want: false},
+		{name: "missing", verified: nil, allowed: []string{"example.com"}, want: false},
+		{name: "allow list disabled", verified: nil, allowed: nil, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := auth.OIDCEmailAllowed("alice@example.com", tt.verified, tt.allowed); got != tt.want {
+				t.Fatalf("allowed=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestOIDCHandler_Login_Disabled(t *testing.T) {
 	h := auth.NewOIDCHandler(auth.OIDCHandlerConfig{
 		SessionSecret: []byte("test-session-secret"),

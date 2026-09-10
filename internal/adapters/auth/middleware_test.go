@@ -103,6 +103,16 @@ func TestMiddleware_SessionOK(t *testing.T) {
 	}
 }
 
+func TestNewSessionCookie_SecureOption(t *testing.T) {
+	cookie, err := auth.NewSessionCookie([]byte("test-secret"), time.Hour, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cookie.Secure {
+		t.Fatal("Secure=false")
+	}
+}
+
 func TestMiddleware_BootstrapSettingsAuthFromLocalhost(t *testing.T) {
 	handler := testMiddleware(t, "", testAPIKey)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/auth", nil)

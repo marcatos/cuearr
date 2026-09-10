@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
 	"github.com/marcatos/cuearr/internal/adapters/auth"
+	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
 	"github.com/marcatos/cuearr/internal/domain"
 	"github.com/marcatos/cuearr/internal/ports"
 )
@@ -211,6 +211,36 @@ func TestListJobs(t *testing.T) {
 	}
 	if len(body.Jobs) != 2 {
 		t.Fatalf("jobs=%d", len(body.Jobs))
+	}
+}
+
+func TestPutSettings_AppliesRuntimeConfig(t *testing.T) {
+	settings := &memSettingsStore{
+		s: domain.Settings{Auth: domain.AuthSettings{APIKey: testAPIKey}},
+	}
+	var applied domain.Settings
+	srv := httpapi.New(httpapi.Deps{
+		Jobs:          &memJobStore{},
+		Settings:      settings,
+		SessionSecret: []byte("test-session-secret"),
+		ApplySettings: func(_ context.Context, next domain.Settings) error {
+			applied = next
+			return nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(
+		`{"watch_dirs":["/new/watch"],"out_dir":"/new/out","in_place":true,"engine":"native"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if applied.Engine != "native" || applied.OutDir != "/new/out" || !applied.InPlace ||
+		len(applied.WatchDirs) != 1 || applied.WatchDirs[0] != "/new/watch" {
+		t.Fatalf("applied=%+v", applied)
 	}
 }
 

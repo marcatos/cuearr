@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	HTTPAddr  string   `yaml:"http_addr"`
-	DataDir   string   `yaml:"data_dir"`
-	WatchDirs []string `yaml:"watch_dirs"`
-	OutDir    string   `yaml:"out_dir"`
-	InPlace   bool     `yaml:"in_place"`
-	Engine    string   `yaml:"engine"`
-	LogLevel  string   `yaml:"log_level"`
+	HTTPAddr     string   `yaml:"http_addr"`
+	DataDir      string   `yaml:"data_dir"`
+	WatchDirs    []string `yaml:"watch_dirs"`
+	OutDir       string   `yaml:"out_dir"`
+	InPlace      bool     `yaml:"in_place"`
+	Engine       string   `yaml:"engine"`
+	LogLevel     string   `yaml:"log_level"`
+	CookieSecure bool     `yaml:"cookie_secure"`
 }
 
 func Load(path string) (Config, error) {
@@ -50,6 +51,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("CUEARR_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
+	}
+	if v := os.Getenv("CUEARR_COOKIE_SECURE"); v != "" {
+		cfg.CookieSecure = strings.EqualFold(strings.TrimSpace(v), "true")
 	}
 }
 

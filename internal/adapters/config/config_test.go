@@ -29,6 +29,7 @@ log_level: debug
 	t.Setenv("CUEARR_ENGINE", "shntool")
 	t.Setenv("CUEARR_HTTP_ADDR", ":9999")
 	t.Setenv("CUEARR_LOG_LEVEL", "warn")
+	t.Setenv("CUEARR_COOKIE_SECURE", "true")
 
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -55,6 +56,9 @@ log_level: debug
 	}
 	if cfg.LogLevel != "warn" {
 		t.Fatalf("LogLevel=%q", cfg.LogLevel)
+	}
+	if !cfg.CookieSecure {
+		t.Fatal("CookieSecure=false")
 	}
 }
 

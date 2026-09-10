@@ -15,9 +15,9 @@ type CueSheet struct {
 }
 
 type CueTrack struct {
-	Number                int
-	Title, Performer      string
-	Index00, Index01      string
+	Number           int
+	Title, Performer string
+	Index00, Index01 string
 }
 
 func ParseCue(data []byte) (CueSheet, error) {
@@ -50,9 +50,7 @@ func ParseCue(data []byte) (CueSheet, error) {
 				sheet.Title = unquoteRest(line, "TITLE")
 			}
 		case "FILE":
-			if len(fields) >= 2 {
-				sheet.File = strings.Trim(fields[1], `"`)
-			}
+			sheet.File = parseCueFile(line)
 		case "TRACK":
 			if len(fields) >= 2 {
 				n, err := strconv.Atoi(fields[1])
@@ -79,6 +77,33 @@ func ParseCue(data []byte) (CueSheet, error) {
 		return CueSheet{}, err
 	}
 	return sheet, nil
+}
+
+func parseCueFile(line string) string {
+	rest := strings.TrimSpace(line[len("FILE"):])
+	if rest == "" {
+		return ""
+	}
+	if rest[0] != '"' {
+		return strings.Fields(rest)[0]
+	}
+	var value strings.Builder
+	for i := 1; i < len(rest); i++ {
+		switch rest[i] {
+		case '"':
+			return value.String()
+		case '\\':
+			if i+1 < len(rest) && (rest[i+1] == '"' || rest[i+1] == '\\') {
+				i++
+				value.WriteByte(rest[i])
+				continue
+			}
+			value.WriteByte(rest[i])
+		default:
+			value.WriteByte(rest[i])
+		}
+	}
+	return value.String()
 }
 
 func parseREM(sheet *CueSheet, fields []string) {

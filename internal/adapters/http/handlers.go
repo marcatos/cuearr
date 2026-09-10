@@ -276,7 +276,11 @@ func (s *Server) handleScanJobs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "scan not configured")
 		return
 	}
-	if len(s.deps.WatchDirs) == 0 {
+	watchDirs := s.deps.WatchDirs
+	if s.deps.RuntimeSettings != nil {
+		watchDirs = s.deps.RuntimeSettings().WatchDirs
+	}
+	if len(watchDirs) == 0 {
 		writeError(w, http.StatusBadRequest, "no watch_dirs configured")
 		return
 	}
@@ -339,6 +343,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if s.deps.ApplySettings != nil {
+		if err := s.deps.ApplySettings(r.Context(), settings); err != nil {
+			if rollbackErr := s.deps.Settings.Put(r.Context(), existing); rollbackErr != nil {
+				slog.Error("settings rollback failed", "error", rollbackErr.Error())
+			}
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, settingsToJSON(settings))
 }
 
@@ -367,7 +380,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	cookie, err := auth.NewSessionCookie(s.deps.SessionSecret, 7*24*time.Hour)
+	cookie, err := auth.NewSessionCookie(s.deps.SessionSecret, 7*24*time.Hour, s.deps.CookieSecure)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "session error")
 		return
@@ -381,7 +394,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	http.SetCookie(w, auth.ClearSessionCookie())
+	http.SetCookie(w, auth.ClearSessionCookie(s.deps.CookieSecure))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

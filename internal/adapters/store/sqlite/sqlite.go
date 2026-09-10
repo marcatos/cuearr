@@ -124,6 +124,22 @@ WHERE id = ?`,
 	return nil
 }
 
+func (s *Store) RecoverRunning(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+UPDATE jobs
+SET status = ?, started_at = NULL, finished_at = NULL,
+	error_text = '', log_text = ''
+WHERE status = ?`, domain.JobQueued, domain.JobRunning)
+	if err != nil {
+		return 0, fmt.Errorf("recover running jobs: %w", err)
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("recover running job count: %w", err)
+	}
+	return count, nil
+}
+
 func (s *SettingsStore) Get(ctx context.Context) (domain.Settings, error) {
 	var payload string
 	err := s.db.QueryRowContext(ctx, `SELECT payload FROM settings WHERE id = 1`).Scan(&payload)
@@ -175,8 +191,8 @@ type rowScanner interface {
 
 func scanJobRow(row rowScanner) (domain.Job, error) {
 	var (
-		job                                   domain.Job
-		created, started, finished            sql.NullString
+		job                        domain.Job
+		created, started, finished sql.NullString
 	)
 	err := row.Scan(
 		&job.ID, &job.Fingerprint, &job.CuePath, &job.ImagePath, &job.OutDir, &job.Status, &job.Engine,

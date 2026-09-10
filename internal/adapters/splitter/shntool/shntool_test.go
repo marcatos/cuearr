@@ -3,6 +3,8 @@ package shntool_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,9 +34,13 @@ func TestShntoolSplit_BuildsExpectedArgs(t *testing.T) {
 	plan := domain.SplitPlan{
 		CuePath: "/in/album.cue", ImagePath: "/in/album.flac", WorkDir: "/in",
 	}
-	res, err := s.Split(context.Background(), plan, "/out")
+	outDir := filepath.Join(t.TempDir(), "album")
+	res, err := s.Split(context.Background(), plan, outDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(outDir); err != nil {
+		t.Fatalf("output directory not created: %v", err)
 	}
 	if fake.lastName != "shntool" {
 		t.Fatalf("bin=%s", fake.lastName)
@@ -43,7 +49,7 @@ func TestShntoolSplit_BuildsExpectedArgs(t *testing.T) {
 		"split",
 		"-f", "/in/album.cue",
 		"-o", "flac",
-		"-d", "/out",
+		"-d", outDir,
 		"/in/album.flac",
 	}
 	if !reflect.DeepEqual(fake.lastArgs, wantArgs) {
@@ -59,7 +65,7 @@ func TestShntoolSplit_NonzeroExitWrapsErrSplitFailed(t *testing.T) {
 	plan := domain.SplitPlan{
 		CuePath: "/in/album.cue", ImagePath: "/in/album.flac", WorkDir: "/in",
 	}
-	_, err := s.Split(context.Background(), plan, "/out")
+	_, err := s.Split(context.Background(), plan, filepath.Join(t.TempDir(), "album"))
 	if err == nil {
 		t.Fatal("expected error")
 	}

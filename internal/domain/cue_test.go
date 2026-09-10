@@ -30,6 +30,16 @@ func TestParseCue_Basic(t *testing.T) {
 	}
 }
 
+func TestParseCue_QuotedFileNameWithSpaces(t *testing.T) {
+	sheet, err := ParseCue([]byte(`FILE "Artist - Album.flac" WAVE`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sheet.File != "Artist - Album.flac" {
+		t.Fatalf("file=%q", sheet.File)
+	}
+}
+
 func TestBuildSplitPlan_FindsFlacBesideCue(t *testing.T) {
 	sheet := CueSheet{File: "album.flac", Tracks: []CueTrack{{Number: 1, Title: "A", Index01: "00:00:00"}}}
 	entries := []DirEntry{{Name: "album.flac"}, {Name: "album.cue"}}

@@ -42,6 +42,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) oidcHandler() *auth.OIDCHandler {
 	return auth.NewOIDCHandler(auth.OIDCHandlerConfig{
 		SessionSecret: s.deps.SessionSecret,
+		CookieSecure:  s.deps.CookieSecure,
 		GetConfig: func(ctx context.Context) (auth.OIDCConfig, error) {
 			settings, err := s.deps.Settings.Get(ctx)
 			if err != nil {

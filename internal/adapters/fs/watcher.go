@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,11 +86,16 @@ func (w *Watcher) Start(ctx context.Context) error {
 			}
 			if ev.Op&fsnotify.Create != 0 {
 				if info, err := os.Stat(ev.Name); err == nil && info.IsDir() {
-					if err := fsw.Add(ev.Name); err != nil {
+					depth, withinRoots := watchDepth(w.dirs, ev.Name)
+					if !withinRoots || depth > DefaultScanDepth {
+						continue
+					}
+					if err := addWatchTree(fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
 						w.log.Warn("watch add failed for new directory", "dir", ev.Name, "err", err)
 					} else {
-						w.log.Info("watching directory", "dir", ev.Name)
+						debounce.schedule(filepath.Clean(ev.Name))
 					}
+					continue
 				}
 			}
 			if ev.Op&(fsnotify.Create|fsnotify.Write) == 0 {
@@ -103,6 +109,18 @@ func (w *Watcher) Start(ctx context.Context) error {
 			debounce.schedule(dir)
 		}
 	}
+}
+
+func watchDepth(roots []string, path string) (int, bool) {
+	for _, root := range roots {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == "." || rel == ".." ||
+			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return len(strings.Split(rel, string(filepath.Separator))), true
+	}
+	return 0, false
 }
 
 type debouncer struct {

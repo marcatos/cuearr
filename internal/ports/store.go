@@ -14,6 +14,10 @@ type JobStore interface {
 	FindByFingerprint(ctx context.Context, fp string) (domain.Job, error)
 }
 
+type RunningJobRecoverer interface {
+	RecoverRunning(ctx context.Context) (int64, error)
+}
+
 type SettingsStore interface {
 	Get(ctx context.Context) (domain.Settings, error)
 	Put(ctx context.Context, s domain.Settings) error

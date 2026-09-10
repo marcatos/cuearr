@@ -35,7 +35,7 @@ func CheckPassword(hash, plain string) bool {
 }
 
 // NewSessionCookie creates a signed HttpOnly session cookie.
-func NewSessionCookie(secret []byte, ttl time.Duration) (*http.Cookie, error) {
+func NewSessionCookie(secret []byte, ttl time.Duration, secure ...bool) (*http.Cookie, error) {
 	if len(secret) == 0 {
 		return nil, fmt.Errorf("session secret required")
 	}
@@ -48,19 +48,23 @@ func NewSessionCookie(secret []byte, ttl time.Duration) (*http.Cookie, error) {
 	if maxAge < 0 {
 		maxAge = 0
 	}
-	return &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
-	}, nil
+	}
+	if len(secure) > 0 {
+		cookie.Secure = secure[0]
+	}
+	return cookie, nil
 }
 
 // ClearSessionCookie returns a cookie that removes the HttpOnly session in the browser.
-func ClearSessionCookie() *http.Cookie {
-	return &http.Cookie{
+func ClearSessionCookie(secure ...bool) *http.Cookie {
+	cookie := &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
@@ -68,6 +72,10 @@ func ClearSessionCookie() *http.Cookie {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	}
+	if len(secure) > 0 {
+		cookie.Secure = secure[0]
+	}
+	return cookie
 }
 
 // ValidSessionCookie reports whether c is a valid signed session for secret.

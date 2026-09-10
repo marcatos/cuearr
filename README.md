@@ -22,7 +22,7 @@
    ```
 
 4. Open **http://127.0.0.1:8787**, sign in, copy the **API key** from Settings (or bootstrap with `CUEARR_API_KEY` before first boot).
-5. Drop a folder containing `album.flac` + `album.cue` under a watch path; Cuearr enqueues a split job. Output lands under `out_dir` (or in-place when enabled).
+5. Drop a folder containing `album.flac` + `album.cue` under a watch path; Cuearr enqueues a split job. Output lands under a collision-safe album subdirectory of `out_dir` (or in-place when enabled).
 
 Build from source (Go 1.23+):
 
@@ -66,7 +66,11 @@ The test is skipped automatically when `shntool` or the fixture files are missin
 | **API key** | `X-Api-Key` header for `/api/v1/*` and Lidarr hooks; bootstrap with `CUEARR_API_KEY` |
 | **OIDC** (optional) | `CUEARR_OIDC_ENABLED`, `CUEARR_OIDC_ISSUER`, `CUEARR_OIDC_CLIENT_ID`, `CUEARR_OIDC_CLIENT_SECRET`, `CUEARR_OIDC_REDIRECT_URL`, `CUEARR_OIDC_ALLOWED_EMAIL_DOMAINS` — see [`configs/cuearr.example.yaml`](configs/cuearr.example.yaml) |
 
-Session cookies protect the embedded UI; API routes accept the API key without a browser session.
+Session cookies protect the embedded UI; API routes accept the API key without a browser session. Set `cookie_secure: true` or `CUEARR_COOKIE_SECURE=true` for HTTPS deployments behind a reverse proxy.
+
+## Runtime settings
+
+On first start, Cuearr seeds watch directories, output directory, in-place mode, and engine from YAML into SQLite. Persisted SQLite settings are authoritative on later starts. Updating these fields through `PUT /api/v1/settings` applies them immediately; changing watch directories restarts the filesystem watcher, and queued jobs use the current output mode and splitter. HTTP address, data directory, log level, and secure-cookie mode remain startup-only and require a restart.
 
 ## Docker
 
@@ -107,7 +111,7 @@ helm upgrade --install cuearr ./deploy/helm/cuearr \
   --set persistence.out.hostPath=/srv/cuearr/out
 ```
 
-Set `image.tag` to a release tag, or leave empty for `appVersion`. OIDC and existing secrets are configured under `auth.*` and `oidc.*` in [`values.yaml`](deploy/helm/cuearr/values.yaml).
+Set `image.tag` to a release tag, or leave empty for `appVersion`. OIDC and existing secrets are configured under `auth.*` and `oidc.*` in [`values.yaml`](deploy/helm/cuearr/values.yaml). The chart defaults the pod and container to UID/GID 1000 and applies `fsGroup: 1000`; pre-existing host paths must still permit Kubernetes to apply or inherit compatible ownership.
 
 ## Proxmox (LXC)
 

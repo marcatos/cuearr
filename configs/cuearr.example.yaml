@@ -5,6 +5,8 @@ out_dir: "/music/ready"
 in_place: false
 engine: shntool
 log_level: info
+# Enable for HTTPS deployments, including TLS-terminating reverse proxies.
+cookie_secure: false
 
 # OIDC (optional) is stored in the SQLite settings DB, not this file.
 # Seed on first boot via environment (or configure later via the settings API):

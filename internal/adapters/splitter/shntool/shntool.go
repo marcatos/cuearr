@@ -3,6 +3,7 @@ package shntool
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -36,6 +37,9 @@ func (s *Splitter) Available(ctx context.Context) error {
 
 func (s *Splitter) Split(ctx context.Context, plan domain.SplitPlan, outDir string) (ports.SplitResult, error) {
 	start := time.Now()
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return ports.SplitResult{}, fmt.Errorf("create output directory %q: %w", outDir, err)
+	}
 	args := []string{
 		"split",
 		"-f", plan.CuePath,

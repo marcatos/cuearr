@@ -117,6 +117,37 @@ func TestJobStore_getNotFound(t *testing.T) {
 	}
 }
 
+func TestJobStore_RecoverRunningRequeuesInterruptedJobs(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	job := domain.Job{
+		ID:          "interrupted",
+		Fingerprint: "fp-interrupted",
+		CuePath:     "/music/album.cue",
+		ImagePath:   "/music/album.flac",
+		Status:      domain.JobRunning,
+		CreatedAt:   time.Now().UTC(),
+		StartedAt:   time.Now().UTC(),
+	}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.RecoverRunning(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered != 1 {
+		t.Fatalf("recovered=%d", recovered)
+	}
+	got, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.JobQueued || !got.StartedAt.IsZero() {
+		t.Fatalf("recovered job=%+v", got)
+	}
+}
+
 func TestSettingsStore_putGet(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)

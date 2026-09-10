@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -82,16 +83,37 @@ func runServe() error {
 	defer store.Close()
 	log.Info("sqlite opened", "path", dbPath)
 
-	splitter, err := newSplitter(cfg.Engine)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	settingsStore := store.Settings()
+	if _, changed, err := auth.Bootstrap(ctx, settingsStore); err != nil {
+		return fmt.Errorf("auth bootstrap: %w", err)
+	} else if changed {
+		log.Info("auth settings bootstrapped from environment")
+	}
+	defaultSettings := domain.Settings{
+		WatchDirs: append([]string(nil), cfg.WatchDirs...),
+		OutDir:    cfg.OutDir,
+		InPlace:   cfg.InPlace,
+		Engine:    cfg.Engine,
+	}
+	runtimeSettings, seeded, err := app.LoadRuntimeSettings(ctx, settingsStore, defaultSettings)
+	if err != nil {
+		return err
+	}
+	if seeded {
+		log.Info("runtime settings seeded from YAML")
+	}
+	splitter, err := newSplitter(runtimeSettings.Engine)
+	if err != nil {
+		return err
+	}
+	runtimeCfg := app.NewRuntimeConfig(runtimeSettings, splitter)
+
 	scanCtx := func(dir string) {
-		_, created, scanErr := app.ScanDir(ctx, dir, store, cfg.Engine, os.ReadFile, listDirEntries)
+		settings, _ := runtimeCfg.Snapshot()
+		_, created, scanErr := app.ScanDir(ctx, dir, store, settings.Engine, os.ReadFile, listDirEntries)
 		if scanErr != nil {
 			if errors.Is(scanErr, domain.ErrImageNotFound) {
 				log.Debug("scan skipped", "dir", dir, "reason", scanErr.Error())
@@ -105,10 +127,10 @@ func runServe() error {
 		}
 	}
 
-	if len(cfg.WatchDirs) > 0 {
-		log.Info("startup scan", "dirs", cfg.WatchDirs)
+	if len(runtimeSettings.WatchDirs) > 0 {
+		log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
 		start := time.Now()
-		if err := app.ScanAll(cfg.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+		if err := app.ScanAll(runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
 			scanCtx(dir)
 			return nil
 		}); err != nil {
@@ -123,11 +145,9 @@ func runServe() error {
 	var wg sync.WaitGroup
 
 	worker := &app.Worker{
-		Store:    store,
-		Splitter: splitter,
-		OutDir:   cfg.OutDir,
-		InPlace:  cfg.InPlace,
-		Log:      log,
+		Store:   store,
+		Runtime: runtimeCfg,
+		Log:     log,
 	}
 	wg.Add(1)
 	go func() {
@@ -137,32 +157,15 @@ func runServe() error {
 		}
 	}()
 
-	if len(cfg.WatchDirs) > 0 {
-		watcher, wErr := fsadapter.NewWatcher(cfg.WatchDirs, func(dir string) error {
-			scanCtx(dir)
-			return nil
-		}, log)
-		if wErr != nil {
-			return wErr
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := watcher.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("watcher exited", "error", err.Error())
-			}
-		}()
+	watchers := newWatcherController(ctx, scanCtx, log)
+	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
+		return err
 	}
+	defer watchers.Stop()
 
 	addr := cfg.HTTPAddr
 	if addr == "" {
 		addr = ":8787"
-	}
-	settingsStore := store.Settings()
-	if _, changed, err := auth.Bootstrap(ctx, settingsStore); err != nil {
-		return fmt.Errorf("auth bootstrap: %w", err)
-	} else if changed {
-		log.Info("auth settings bootstrapped from environment")
 	}
 	sessionSecret, err := auth.LoadOrCreateSessionSecret(cfg.DataDir)
 	if err != nil {
@@ -172,19 +175,44 @@ func runServe() error {
 		Jobs:          store,
 		Settings:      settingsStore,
 		SessionSecret: sessionSecret,
-		Engine:    cfg.Engine,
-		WatchDirs: cfg.WatchDirs,
+		CookieSecure:  cfg.CookieSecure,
+		RuntimeSettings: func() domain.Settings {
+			settings, _ := runtimeCfg.Snapshot()
+			return settings
+		},
+		ApplySettings: func(_ context.Context, next domain.Settings) error {
+			nextSplitter, err := newSplitter(next.Engine)
+			if err != nil {
+				return err
+			}
+			current, _ := runtimeCfg.Snapshot()
+			if !slices.Equal(current.WatchDirs, next.WatchDirs) {
+				if err := watchers.Restart(next.WatchDirs); err != nil {
+					return err
+				}
+			}
+			runtimeCfg.Apply(next, nextSplitter)
+			log.Info("runtime settings applied",
+				"engine", next.Engine,
+				"watch_dirs", len(next.WatchDirs),
+				"in_place", next.InPlace,
+			)
+			return nil
+		},
 		CreateJob: func(c context.Context, path string) (domain.Job, bool, error) {
-			return app.ScanDir(c, path, store, cfg.Engine, os.ReadFile, listDirEntries)
+			settings, _ := runtimeCfg.Snapshot()
+			return app.ScanDir(c, path, store, settings.Engine, os.ReadFile, listDirEntries)
 		},
 		ScanWatch: func(c context.Context) error {
-			return app.ScanAll(cfg.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+			settings, _ := runtimeCfg.Snapshot()
+			return app.ScanAll(settings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
 				scanCtx(dir)
 				return nil
 			})
 		},
 		CheckShntool: func(c context.Context) error {
-			return splitter.Available(c)
+			_, currentSplitter := runtimeCfg.Snapshot()
+			return currentSplitter.Available(c)
 		},
 	})
 	httpSrv := &http.Server{
@@ -208,6 +236,7 @@ func runServe() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	watchers.Stop()
 
 	wg.Wait()
 	log.Info("cuearr serve stopped")
@@ -223,6 +252,79 @@ func newSplitter(engine string) (ports.Splitter, error) {
 	default:
 		return nil, fmt.Errorf("unknown engine %q", engine)
 	}
+}
+
+type watcherController struct {
+	rootCtx context.Context
+	onDir   func(string)
+	log     *slog.Logger
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+}
+
+func newWatcherController(rootCtx context.Context, onDir func(string), log *slog.Logger) *watcherController {
+	return &watcherController{rootCtx: rootCtx, onDir: onDir, log: log}
+}
+
+func (c *watcherController) Restart(dirs []string) error {
+	start := time.Now()
+	for _, dir := range dirs {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return fmt.Errorf("watch directory %q: %w", dir, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("watch path %q is not a directory", dir)
+		}
+	}
+
+	var watcher *fsadapter.Watcher
+	var err error
+	if len(dirs) > 0 {
+		watcher, err = fsadapter.NewWatcher(dirs, func(dir string) error {
+			c.onDir(dir)
+			return nil
+		}, c.log)
+		if err != nil {
+			return err
+		}
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stopLocked()
+	if watcher != nil {
+		watchCtx, cancel := context.WithCancel(c.rootCtx)
+		c.cancel = cancel
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			if err := watcher.Start(watchCtx); err != nil && !errors.Is(err, context.Canceled) {
+				c.log.Error("watcher exited", "error", err.Error())
+			}
+		}()
+	}
+	c.log.Info("watcher configuration applied",
+		"watch_dirs", len(dirs),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+	return nil
+}
+
+func (c *watcherController) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stopLocked()
+}
+
+func (c *watcherController) stopLocked() {
+	if c.cancel == nil {
+		return
+	}
+	c.cancel()
+	c.wg.Wait()
+	c.cancel = nil
 }
 
 type execRunner struct{}

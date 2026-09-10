@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,15 +14,17 @@ import (
 )
 
 type fakeSplitter struct {
-	result ports.SplitResult
-	err    error
+	result  ports.SplitResult
+	err     error
+	outDirs []string
 }
 
 func (f *fakeSplitter) Name() string { return "fake" }
 
 func (f *fakeSplitter) Available(context.Context) error { return nil }
 
-func (f *fakeSplitter) Split(_ context.Context, _ domain.SplitPlan, _ string) (ports.SplitResult, error) {
+func (f *fakeSplitter) Split(_ context.Context, _ domain.SplitPlan, outDir string) (ports.SplitResult, error) {
+	f.outDirs = append(f.outDirs, outDir)
 	return f.result, f.err
 }
 
@@ -93,5 +96,32 @@ func TestRunJob_SplitErrorMarksFailed(t *testing.T) {
 	}
 	if got.Error == "" {
 		t.Fatal("expected error message on job")
+	}
+}
+
+func TestRunJob_UsesDistinctPerAlbumOutputDirectories(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeJobStore{}
+	splitter := &fakeSplitter{}
+	jobs := []domain.Job{
+		{ID: "job-a", Fingerprint: "album-a", CuePath: "/music/a/album.cue", ImagePath: "/music/a/album.flac", Status: domain.JobQueued},
+		{ID: "job-b", Fingerprint: "album-b", CuePath: "/music/b/album.cue", ImagePath: "/music/b/album.flac", Status: domain.JobQueued},
+	}
+	for _, job := range jobs {
+		if _, err := store.Create(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := app.RunJob(ctx, store, splitter, job, "/out", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(splitter.outDirs) != 2 {
+		t.Fatalf("split calls=%d", len(splitter.outDirs))
+	}
+	if splitter.outDirs[0] == splitter.outDirs[1] {
+		t.Fatalf("colliding output dirs: %q", splitter.outDirs[0])
+	}
+	if splitter.outDirs[0] != filepath.Join("/out", "album-a") {
+		t.Fatalf("first output dir=%q", splitter.outDirs[0])
 	}
 }

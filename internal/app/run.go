@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -19,6 +20,8 @@ func RunJob(ctx context.Context, store ports.JobStore, splitter ports.Splitter, 
 	targetOut := outDir
 	if inPlace {
 		targetOut = filepath.Dir(job.ImagePath)
+	} else {
+		targetOut = filepath.Join(outDir, albumOutputKey(job))
 	}
 
 	running := job
@@ -68,6 +71,25 @@ func RunJob(ctx context.Context, store ports.JobStore, splitter ports.Splitter, 
 		"split_duration_ms", splitMs,
 	)
 	return finished, nil
+}
+
+func albumOutputKey(job domain.Job) string {
+	key := strings.TrimSpace(job.Fingerprint)
+	if key != "" {
+		safe := true
+		for _, r := range key {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+				(r < '0' || r > '9') && r != '-' && r != '_' {
+				safe = false
+				break
+			}
+		}
+		if safe {
+			return key
+		}
+	}
+	sum := sha256.Sum256([]byte(job.CuePath + "\x00" + job.ImagePath + "\x00" + key))
+	return fmt.Sprintf("album-%x", sum[:8])
 }
 
 func buildJobLog(result ports.SplitResult) string {

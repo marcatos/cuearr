@@ -19,8 +19,8 @@ CM="  ✔ "
 INFO="  💡 "
 CROSS="  ✖ "
 
-msg_info() { echo -e "${BL}${INFO}${CL}${YW}$*${CL}"; }
-msg_ok() { echo -e "${GN}${CM}${CL}$*"; }
+msg_info() { echo -e "${BL}${INFO}${CL}${YW}$*${CL}" >&2; }
+msg_ok() { echo -e "${GN}${CM}${CL}$*" >&2; }
 msg_error() { echo -e "${RD}${CROSS}${CL}$*" >&2; }
 
 require_root() {
@@ -170,8 +170,8 @@ create_lxc() {
     -rootfs "${storage}:8" \
     -unprivileged "${unprivileged}" \
     -features nesting=0 \
-    -onboot 1
-  pct start "${ctid}"
+    -onboot 1 >&2
+  pct start "${ctid}" >&2
   msg_ok "Container ${ctid} started"
   echo "${ctid}"
 }

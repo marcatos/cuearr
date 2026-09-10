@@ -66,6 +66,14 @@ func EmailDomainAllowed(email string, allowed []string) bool {
 	return false
 }
 
+// OIDCEmailAllowed requires a positively verified email when domains are restricted.
+func OIDCEmailAllowed(email string, emailVerified *bool, allowed []string) bool {
+	if len(allowed) > 0 && (emailVerified == nil || !*emailVerified) {
+		return false
+	}
+	return EmailDomainAllowed(email, allowed)
+}
+
 // OIDCProviderDiscoverer loads an OIDC provider document (overridable in tests).
 type OIDCProviderDiscoverer func(ctx context.Context, issuer string) (*oidc.Provider, error)
 
@@ -73,6 +81,7 @@ type OIDCProviderDiscoverer func(ctx context.Context, issuer string) (*oidc.Prov
 type OIDCHandler struct {
 	sessionSecret []byte
 	sessionTTL    time.Duration
+	cookieSecure  bool
 	getConfig     func(context.Context) (OIDCConfig, error)
 	discover      OIDCProviderDiscoverer
 }
@@ -83,6 +92,7 @@ type OIDCHandlerConfig struct {
 	SessionTTL    time.Duration
 	GetConfig     func(context.Context) (OIDCConfig, error)
 	Discover      OIDCProviderDiscoverer
+	CookieSecure  bool
 }
 
 // NewOIDCHandler builds an OIDC login handler.
@@ -98,6 +108,7 @@ func NewOIDCHandler(cfg OIDCHandlerConfig) *OIDCHandler {
 	return &OIDCHandler{
 		sessionSecret: cfg.SessionSecret,
 		sessionTTL:    ttl,
+		cookieSecure:  cfg.CookieSecure,
 		getConfig:     cfg.GetConfig,
 		discover:      discover,
 	}
@@ -138,7 +149,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(oidcStateTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   h.cookieSecure || r.TLS != nil,
 	})
 	http.Redirect(w, r, oauthCfg.AuthCodeURL(state), http.StatusFound)
 }
@@ -171,7 +182,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   h.cookieSecure || r.TLS != nil,
 	})
 	qState := r.URL.Query().Get("state")
 	if qState == "" || qState != stateCookie.Value {
@@ -219,7 +230,8 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var claims struct {
-		Email string `json:"email"`
+		Email         string `json:"email"`
+		EmailVerified *bool  `json:"email_verified"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		slog.Warn("oidc callback: parse claims", "error", err.Error())
@@ -230,12 +242,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		writeOIDCJSONError(w, http.StatusUnauthorized, "email claim required")
 		return
 	}
-	if !EmailDomainAllowed(claims.Email, cfg.AllowedEmailDomains) {
-		slog.Warn("oidc callback: email domain denied")
+	if !OIDCEmailAllowed(claims.Email, claims.EmailVerified, cfg.AllowedEmailDomains) {
+		slog.Warn("oidc callback: email authorization denied")
 		writeOIDCJSONError(w, http.StatusForbidden, "email domain not allowed")
 		return
 	}
-	session, err := NewSessionCookie(h.sessionSecret, h.sessionTTL)
+	session, err := NewSessionCookie(h.sessionSecret, h.sessionTTL, h.cookieSecure || r.TLS != nil)
 	if err != nil {
 		slog.Error("oidc callback: session", "error", err.Error())
 		writeOIDCJSONError(w, http.StatusInternalServerError, "session error")
