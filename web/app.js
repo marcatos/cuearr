@@ -2,6 +2,7 @@
   "use strict";
 
   const API_KEY_STORAGE = "cuearr_api_key";
+  const AUTO_REFRESH_MS = 5000;
 
   function apiKey() {
     return localStorage.getItem(API_KEY_STORAGE) || "";
@@ -34,11 +35,52 @@
     return data;
   }
 
+  function albumLabel(cuePath) {
+    const parts = String(cuePath || "")
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 2] : parts[0] || "Unknown album";
+  }
+
+  function remediationHint(error) {
+    const message = String(error || "").toLowerCase();
+    if (/permission|access denied|read-only/.test(message)) {
+      return "Check read permissions on the source and write permissions on the output directory.";
+    }
+    if (/no space|disk full|insufficient.*space/.test(message)) {
+      return "Free disk space in the output location, then retry the job.";
+    }
+    if (/multiple cue|ambiguous cue/.test(message)) {
+      return "Keep one CUE sheet for this album, move the others elsewhere, then retry.";
+    }
+    if (/verif|mismatch|duration|track count/.test(message)) {
+      return "Confirm the source image and CUE sheet belong to the same album and have matching track boundaries.";
+    }
+    return "Review the job log, correct the reported problem, then retry.";
+  }
+
+  function normalizeEngine(engine) {
+    return engine === "native" ? "shntool" : engine || "shntool";
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      AUTO_REFRESH_MS: AUTO_REFRESH_MS,
+      albumLabel: albumLabel,
+      normalizeEngine: normalizeEngine,
+      remediationHint: remediationHint,
+    };
+    return;
+  }
+
   const el = {
     view: document.getElementById("view"),
     nav: document.getElementById("nav-main"),
     logout: document.getElementById("btn-logout"),
   };
+  let refreshTimer = null;
+  let refreshInFlight = false;
 
   function route() {
     const hash = location.hash.replace(/^#/, "") || "/";
@@ -103,7 +145,11 @@
           "<tr><td><a href=\"#/jobs/" +
           esc(j.id) +
           "\">" +
+          "<strong>" +
+          esc(albumLabel(j.cue_path)) +
+          "</strong><span class=\"job-id\">" +
           esc(j.id.slice(0, 8)) +
+          "</span>" +
           "</a></td><td><span class=\"" +
           statusClass(j.status) +
           "\">" +
@@ -119,15 +165,20 @@
       })
       .join("");
     return (
-      "<table><thead><tr><th>ID</th><th>Status</th><th>CUE</th><th>Engine</th><th>Created</th></tr></thead><tbody>" +
+      "<table><thead><tr><th>Album</th><th>Status</th><th>CUE</th><th>Engine</th><th>Created</th></tr></thead><tbody>" +
       rows +
       "</tbody></table>"
     );
   }
 
-  async function renderDashboard() {
-    el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
+  async function renderDashboard(showLoading) {
+    if (showLoading !== false) {
+      el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
+    }
     const jobs = await loadJobs();
+    if (route().name !== "dashboard") {
+      return;
+    }
     const all = jobs.filter(function (j) {
       return j.status === "queued" || j.status === "running";
     });
@@ -148,14 +199,14 @@
       jobsTable(all, "No jobs in queue.") +
       "</div>";
     document.getElementById("btn-refresh").onclick = function () {
-      renderDashboard();
+      refreshCurrentView("dashboard");
     };
     document.getElementById("btn-scan").onclick = async function () {
       const btn = document.getElementById("btn-scan");
       btn.disabled = true;
       try {
         await api("/api/v1/jobs/scan", { method: "POST" });
-        await renderDashboard();
+        await renderDashboard(false);
       } catch (e) {
         alert(e.message);
       } finally {
@@ -168,9 +219,14 @@
     return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + esc(label) + "</div></div>";
   }
 
-  async function renderHistory() {
-    el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
+  async function renderHistory(showLoading) {
+    if (showLoading !== false) {
+      el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
+    }
     const jobs = await loadJobs();
+    if (route().name !== "history") {
+      return;
+    }
     const hist = jobs.filter(function (j) {
       return j.status === "completed" || j.status === "failed";
     });
@@ -181,14 +237,23 @@
       jobsTable(hist, "No completed or failed jobs yet.") +
       "</div>";
     document.getElementById("btn-refresh").onclick = function () {
-      renderHistory();
+      refreshCurrentView("history");
     };
   }
 
   async function renderJob(id) {
     el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
     const j = await api("/api/v1/jobs/" + encodeURIComponent(id));
+    if (route().name !== "job" || route().id !== id) {
+      return;
+    }
     const err = j.error ? '<p class="msg err">' + esc(j.error) + "</p>" : "";
+    const failedActions =
+      j.status === "failed"
+        ? '<div class="remediation"><h2>How to recover</h2><p>' +
+          esc(remediationHint(j.error)) +
+          '</p><button type="button" id="btn-retry">Retry job</button></div>'
+        : "";
     el.view.innerHTML =
       "<h1>Job " +
       esc(j.id) +
@@ -213,12 +278,26 @@
       "<p><strong>Attempts:</strong> " +
       esc(String(j.attempt_count || 0)) +
       "</p>" +
+      failedActions +
       attemptHistory(j.attempts) +
       "<h2>Log</h2>" +
       '<div class="log-box">' +
       esc(j.log || "(empty)") +
       "</div>" +
       "</div>";
+    const retry = document.getElementById("btn-retry");
+    if (retry) {
+      retry.onclick = async function () {
+        retry.disabled = true;
+        try {
+          await api("/api/v1/jobs/" + encodeURIComponent(j.id) + "/retry", { method: "POST" });
+          await renderJob(j.id);
+        } catch (e) {
+          alert(e.message);
+          retry.disabled = false;
+        }
+      };
+    }
   }
 
   function attemptHistory(attempts) {
@@ -244,12 +323,20 @@
   async function renderSettings() {
     el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
     const s = await api("/api/v1/settings");
+    if (route().name !== "settings") {
+      return;
+    }
     const auth = s.auth || {};
     const watch = (s.watch_dirs || []).join("\n");
     const domains = (auth.oidc_allowed_email_domains || []).join(", ");
+    const nativeWarning =
+      s.engine === "native"
+        ? '<p class="msg warn">The native engine is no longer supported. Save settings to switch to shntool.</p>'
+        : "";
     el.view.innerHTML =
       "<h1>Settings</h1>" +
       '<form id="settings-form" class="card">' +
+      nativeWarning +
       '<div class="form-row"><label>Watch directories (one per line)</label><textarea name="watch_dirs" rows="4">' +
       esc(watch) +
       "</textarea></div>" +
@@ -261,7 +348,6 @@
       ' /><label for="in_place">In-place split</label></div>' +
       '<div class="form-row"><label>Engine</label><select name="engine">' +
       engineOpt("shntool", s.engine) +
-      engineOpt("native", s.engine) +
       "</select></div>" +
       '<div class="form-row"><label>Max attempts (total, including first; default 3)</label><input type="number" min="1" name="max_retries" value="' +
       esc(String(s.max_retries != null ? s.max_retries : 3)) +
@@ -299,9 +385,30 @@
       esc(domains) +
       '" /></div>' +
       '<p><a href="/api/v1/auth/oidc/login">Sign in with OIDC</a> (test provider redirect)</p>' +
+      "<h2>Diagnostics</h2>" +
+      '<p class="muted">Download a redacted snapshot for troubleshooting.</p>' +
+      '<button type="button" class="secondary" id="btn-diagnostics">Download diagnostics</button>' +
       '<div id="settings-msg"></div>' +
       '<button type="submit">Save settings</button>' +
       "</form>";
+    document.getElementById("btn-diagnostics").onclick = async function () {
+      const btn = document.getElementById("btn-diagnostics");
+      btn.disabled = true;
+      try {
+        const diagnostics = await api("/api/v1/diagnostics");
+        const blob = new Blob([JSON.stringify(diagnostics, null, 2) + "\n"], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "cuearr-diagnostics.json";
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    };
     document.getElementById("settings-form").onsubmit = async function (ev) {
       ev.preventDefault();
       const f = ev.target;
@@ -329,7 +436,7 @@
         watch_dirs: watchDirs,
         out_dir: f.out_dir.value.trim(),
         in_place: f.in_place.checked,
-        engine: f.engine.value,
+        engine: "shntool",
         max_retries: parseInt(f.max_retries.value, 10) || 3,
         auth: {
           oidc_enabled: f.oidc_enabled.checked,
@@ -361,8 +468,43 @@
   }
 
   function engineOpt(val, current) {
-    const sel = val === (current || "shntool") ? " selected" : "";
+    const sel = val === normalizeEngine(current) ? " selected" : "";
     return '<option value="' + val + '"' + sel + ">" + val + "</option>";
+  }
+
+  function stopAutoRefresh() {
+    if (refreshTimer !== null) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
+  function startAutoRefresh(routeName) {
+    stopAutoRefresh();
+    if (document.visibilityState === "hidden") {
+      return;
+    }
+    refreshTimer = setInterval(function () {
+      refreshCurrentView(routeName);
+    }, AUTO_REFRESH_MS);
+  }
+
+  async function refreshCurrentView(routeName) {
+    if (refreshInFlight || document.visibilityState === "hidden" || route().name !== routeName) {
+      return;
+    }
+    refreshInFlight = true;
+    try {
+      if (routeName === "dashboard") {
+        await renderDashboard(false);
+      } else if (routeName === "history") {
+        await renderHistory(false);
+      }
+    } catch (e) {
+      console.error("ERROR queue refresh failed", { route: routeName, error: e });
+    } finally {
+      refreshInFlight = false;
+    }
   }
 
   function renderLogin() {
@@ -391,6 +533,7 @@
   }
 
   async function render() {
+    stopAutoRefresh();
     const r = route();
     setNav(r.name === "job" ? "dashboard" : r.name);
     try {
@@ -400,10 +543,16 @@
       }
       if (r.name === "dashboard") {
         await renderDashboard();
+        if (route().name === "dashboard") {
+          startAutoRefresh("dashboard");
+        }
         return;
       }
       if (r.name === "history") {
         await renderHistory();
+        if (route().name === "history") {
+          startAutoRefresh("history");
+        }
         return;
       }
       if (r.name === "settings") {
@@ -430,7 +579,19 @@
     window.location.href = "/login";
   };
 
-  window.addEventListener("hashchange", render);
+  window.addEventListener("hashchange", function () {
+    stopAutoRefresh();
+    render();
+  });
+  document.addEventListener("visibilitychange", function () {
+    const current = route().name;
+    if (document.visibilityState === "hidden") {
+      stopAutoRefresh();
+    } else if (current === "dashboard" || current === "history") {
+      refreshCurrentView(current);
+      startAutoRefresh(current);
+    }
+  });
   if (!location.hash) {
     location.hash = "#/";
   }

@@ -8,6 +8,10 @@ Thank you for your interest in Cuearr.
 
 Use the issue templates when reporting bugs, split failures, or feature requests. For design context, see the [design spec](docs/superpowers/specs/2026-09-10-cuearr-design.md).
 
+## Assisted beta (B3)
+
+Recruitment and reporting rules: **[docs/beta.md](docs/beta.md)**. Sign up with the **Beta tester signup** issue template; maintainers publish a biweekly summary on [#25](https://github.com/marcatos/cuearr/issues/25).
+
 ## Development
 
 - **Go 1.23+** is required once the module lands.

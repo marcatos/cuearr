@@ -326,7 +326,7 @@ func TestPutSettings_AppliesRuntimeConfig(t *testing.T) {
 		},
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(
-		`{"watch_dirs":["/new/watch"],"out_dir":"/new/out","in_place":true,"engine":"native","max_retries":4}`,
+		`{"watch_dirs":["/new/watch"],"out_dir":"/new/out","in_place":true,"engine":"shntool","max_retries":4}`,
 	))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", testAPIKey)
@@ -335,9 +335,46 @@ func TestPutSettings_AppliesRuntimeConfig(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if applied.Engine != "native" || applied.OutDir != "/new/out" || !applied.InPlace ||
+	if applied.Engine != "shntool" || applied.OutDir != "/new/out" || !applied.InPlace ||
 		len(applied.WatchDirs) != 1 || applied.WatchDirs[0] != "/new/watch" || applied.MaxRetries != 4 {
 		t.Fatalf("applied=%+v", applied)
+	}
+}
+
+func TestPutSettings_RejectsNativeEngine(t *testing.T) {
+	settings := &memSettingsStore{
+		s: domain.Settings{
+			Engine: "shntool",
+			Auth:   domain.AuthSettings{APIKey: testAPIKey},
+		},
+	}
+	applied := false
+	srv := httpapi.New(httpapi.Deps{
+		Jobs:          &memJobStore{},
+		Settings:      settings,
+		SessionSecret: []byte("test-session-secret"),
+		ApplySettings: func(context.Context, domain.Settings) error {
+			applied = true
+			return nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(
+		`{"engine":"native","max_retries":3}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if applied {
+		t.Fatal("unsupported settings were applied")
+	}
+	if settings.s.Engine != "shntool" {
+		t.Fatalf("stored engine=%q", settings.s.Engine)
 	}
 }
 

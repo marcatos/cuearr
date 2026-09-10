@@ -49,6 +49,41 @@ func TestApplyAttemptFailure_SingleAttemptWhenMaxIsOne(t *testing.T) {
 	}
 }
 
+func TestRequeueFailedJob_OnlyFailed(t *testing.T) {
+	at := time.Date(2026, 9, 10, 16, 0, 0, 0, time.UTC)
+	failed := domain.Job{
+		ID:           "j1",
+		Status:       domain.JobFailed,
+		Error:        "split failed",
+		Log:          "stderr",
+		AttemptCount: 3,
+		AttemptLog: []domain.JobAttempt{
+			{Number: 1, At: at, Error: "a"},
+			{Number: 2, At: at, Error: "b"},
+			{Number: 3, At: at, Error: "c"},
+		},
+		StartedAt:  at,
+		FinishedAt: at,
+	}
+	requeued, err := domain.RequeueFailedJob(failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requeued.Status != domain.JobQueued || requeued.Error != "" || requeued.Log != "" {
+		t.Fatalf("requeued=%+v", requeued)
+	}
+	if requeued.AttemptCount != 0 || len(requeued.AttemptLog) != 3 {
+		t.Fatalf("attempt history=%+v", requeued)
+	}
+	if !requeued.StartedAt.IsZero() || !requeued.FinishedAt.IsZero() {
+		t.Fatalf("timestamps=%+v %+v", requeued.StartedAt, requeued.FinishedAt)
+	}
+
+	if _, err := domain.RequeueFailedJob(domain.Job{ID: "j2", Status: domain.JobQueued}); err == nil {
+		t.Fatal("expected conflict for queued job")
+	}
+}
+
 func TestBeginAttempt_IncrementsBeforeWork(t *testing.T) {
 	at := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
 	job := domain.BeginAttempt(domain.Job{ID: "j1", Status: domain.JobQueued}, at)

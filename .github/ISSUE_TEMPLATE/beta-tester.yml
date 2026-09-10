@@ -1,0 +1,66 @@
+name: Beta tester signup
+description: Join the assisted beta cohort (batch B3)
+title: "[Beta signup]: "
+labels:
+  - batch:b3
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for volunteering. Complete the [10-minute onboarding](https://github.com/marcatos/cuearr/blob/main/docs/onboarding.md) first, then fill this form. Do **not** attach copyrighted audio.
+
+  - type: input
+    id: version
+    attributes:
+      label: Cuearr version
+      description: Output of `cuearr version` or the Docker/image tag you will use
+      placeholder: e.g. v0.2.0 or ghcr.io/marcatos/cuearr:v0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - docker
+        - unraid
+        - binary
+        - proxmox
+        - helm
+        - other
+    validations:
+      required: true
+
+  - type: input
+    id: os_arch
+    attributes:
+      label: OS / architecture
+      placeholder: e.g. Ubuntu 24.04 amd64, Unraid 6.12
+    validations:
+      required: true
+
+  - type: textarea
+    id: stack
+    attributes:
+      label: Homelab stack
+      description: Lidarr/Plex/*arr versions if relevant; redact hostnames and paths
+      placeholder: Lidarr 2.x, Plex Music, Cuearr watch → out → Lidarr import
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: onboarding
+    attributes:
+      label: Onboarding
+      options:
+        - label: I completed docs/onboarding.md (synthetic fixture, job completed, tracks in out)
+          required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Reporting agreement
+      options:
+        - label: I will redact paths and secrets in issues and attach diagnostics (logs/job id), not full albums
+          required: true

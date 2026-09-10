@@ -26,6 +26,8 @@
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
+**Beta (B3):** [Recruitment + reporting](docs/beta.md) · [10-minute onboarding](docs/onboarding.md) — synthetic fixture first, then signup issue for the assisted cohort.
+
 ## Why Cuearr exists
 
 Many music downloads still ship as **one big FLAC (or WAV/APE) + a `.cue` sheet**. That layout is fine for archival players. It is a poor fit for the *arr + Plex stack:
@@ -151,7 +153,7 @@ HTTPS reverse proxy: set `cookie_secure: true` / `CUEARR_COOKIE_SECURE=true`.
 ## Configuration notes
 
 - First boot seeds watch/out/engine from YAML into SQLite; **SQLite wins afterwards**.
-- `PUT /api/v1/settings` updates runtime (watcher restarts if watch dirs change). HTTP listen address and `data_dir` still need a process restart.
+- `PUT /api/v1/settings` updates runtime (watcher restarts if watch dirs change). The only supported `engine` value is `shntool`; requests selecting deferred `native` return `400 Bad Request`. HTTP listen address and `data_dir` still need a process restart.
 - Non–in-place jobs write under `out_dir/<album-subdir>/` so default shntool names do not collide across albums.
 
 ## Development

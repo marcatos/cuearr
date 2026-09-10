@@ -282,6 +282,41 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobToJSON(job))
 }
 
+func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id := r.PathValue("id")
+	job, err := s.deps.Jobs.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	requeued, err := domain.RequeueFailedJob(job)
+	if err != nil {
+		if errors.Is(err, domain.ErrConflict) {
+			writeError(w, http.StatusConflict, "job is not failed")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.deps.Jobs.Update(r.Context(), requeued); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, jobToJSON(requeued))
+}
+
 func (s *Server) handleScanJobs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -337,6 +372,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var body settingsPutJSON
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Engine == "native" {
+		writeError(w, http.StatusBadRequest, "native engine is not supported; use shntool")
 		return
 	}
 	settings := domain.Settings{
