@@ -10,8 +10,7 @@ import (
 const cueFramesPerSecond = 75
 
 // ParseCueIndex converts a CUE INDEX timestamp (MM:SS:FF) to a duration from the
-// start of the image. For 00:00:SS the third field is whole seconds (e2e fixture
-// convention); otherwise FF is CD frames at 75/s.
+// start of the image. FF is Red Book CD frames at 75/s; SS must be 0–59, FF 0–74.
 func ParseCueIndex(mmssff string) (time.Duration, error) {
 	mmssff = strings.TrimSpace(mmssff)
 	parts := strings.Split(mmssff, ":")
@@ -26,23 +25,17 @@ func ParseCueIndex(mmssff string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid cue index seconds in %q: %w", mmssff, err)
 	}
-	third, err := strconv.Atoi(parts[2])
+	frames, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return 0, fmt.Errorf("invalid cue index field in %q: %w", mmssff, err)
+		return 0, fmt.Errorf("invalid cue index frames in %q: %w", mmssff, err)
 	}
 	if minutes < 0 || seconds < 0 || seconds >= 60 {
 		return 0, fmt.Errorf("invalid cue index %q", mmssff)
 	}
-	if minutes == 0 && seconds == 0 {
-		if third < 0 {
-			return 0, fmt.Errorf("invalid cue index %q", mmssff)
-		}
-		return time.Duration(third) * time.Second, nil
-	}
-	if third < 0 || third >= cueFramesPerSecond {
+	if frames < 0 || frames >= cueFramesPerSecond {
 		return 0, fmt.Errorf("invalid cue index frames in %q", mmssff)
 	}
-	totalFrames := (minutes*60+seconds)*cueFramesPerSecond + third
+	totalFrames := (minutes*60+seconds)*cueFramesPerSecond + frames
 	return time.Duration(totalFrames) * time.Second / cueFramesPerSecond, nil
 }
 

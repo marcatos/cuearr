@@ -18,7 +18,7 @@ FILE "album.flac" WAVE
     INDEX 01 00:00:00
   TRACK 02 AUDIO
     TITLE "Track Two"
-    INDEX 01 00:00:03
+    INDEX 01 00:03:00
 EOF
 
 if [[ -f "$FLAC" ]]; then

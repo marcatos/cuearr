@@ -11,7 +11,8 @@ func TestParseCueIndex(t *testing.T) {
 		want time.Duration
 	}{
 		{"00:00:00", 0},
-		{"00:00:03", 3 * time.Second},
+		{"00:00:03", 3 * time.Second / 75},
+		{"00:03:00", 3 * time.Second},
 		{"01:00:02", (60*75 + 2) * time.Second / 75},
 	}
 	for _, tc := range tests {
@@ -31,7 +32,7 @@ func TestExpectedTrackDurations_twoTracksSixSeconds(t *testing.T) {
 	sheet := CueSheet{
 		Tracks: []CueTrack{
 			{Number: 1, Index01: "00:00:00"},
-			{Number: 2, Index01: "00:00:03"},
+			{Number: 2, Index01: "00:03:00"},
 		},
 	}
 	total := 6 * time.Second
