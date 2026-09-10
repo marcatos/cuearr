@@ -22,7 +22,8 @@ func newStaticHandler() http.Handler {
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" || auth.IsLoginStaticPath(r.URL.Path) || !strings.Contains(path, ".") {
-			r.URL.Path = "/index.html"
+			http.ServeFileFS(w, r, sub, "index.html")
+			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})

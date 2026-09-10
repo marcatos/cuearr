@@ -56,6 +56,16 @@ func TestMiddleware_LoginPublic(t *testing.T) {
 	}
 }
 
+func TestMiddleware_LogoutPublic(t *testing.T) {
+	handler := testMiddleware(t, "$2a$10$hashed", testAPIKey)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/logout", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
 func TestMiddleware_OIDCLoginPublic(t *testing.T) {
 	handler := testMiddleware(t, "$2a$10$hashed", testAPIKey)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/login", nil)

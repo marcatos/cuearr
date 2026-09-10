@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
+	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/domain"
 	"github.com/marcatos/cuearr/internal/ports"
 )
@@ -209,5 +211,76 @@ func TestListJobs(t *testing.T) {
 	}
 	if len(body.Jobs) != 2 {
 		t.Fatalf("jobs=%d", len(body.Jobs))
+	}
+}
+
+func TestLogout_ClearsSessionCookie(t *testing.T) {
+	ts := newTestServer(t, &memJobStore{}, nil)
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/logout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	var cleared *http.Cookie
+	for _, c := range res.Cookies() {
+		if c.Name == auth.SessionCookieName {
+			cleared = c
+			break
+		}
+	}
+	if cleared == nil {
+		t.Fatalf("Set-Cookie missing %q; headers=%v", auth.SessionCookieName, res.Header["Set-Cookie"])
+	}
+	if cleared.MaxAge != -1 {
+		t.Fatalf("MaxAge=%d want -1", cleared.MaxAge)
+	}
+	if cleared.HttpOnly != auth.ClearSessionCookie().HttpOnly {
+		t.Fatal("expected HttpOnly clear cookie")
+	}
+}
+
+func TestStaticRoot_ReturnsHTML(t *testing.T) {
+	settings := &memSettingsStore{
+		s: domain.Settings{
+			Auth: domain.AuthSettings{
+				PasswordHash: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+				APIKey:       testAPIKey,
+			},
+		},
+	}
+	srv := httpapi.New(httpapi.Deps{
+		Jobs:          &memJobStore{},
+		Settings:      settings,
+		SessionSecret: []byte("test-session-secret"),
+		Engine:        "shntool",
+		WatchDirs:     []string{"/watch"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "text/html") {
+		t.Fatalf("content-type=%q", ct)
+	}
+	body := rec.Body.String()
+	lower := strings.ToLower(body)
+	if !strings.Contains(lower, "<html") && !strings.Contains(lower, "<!doctype html") {
+		end := len(body)
+		if end > 200 {
+			end = 200
+		}
+		t.Fatalf("body=%q", body[:end])
 	}
 }

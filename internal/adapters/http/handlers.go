@@ -376,6 +376,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	http.SetCookie(w, auth.ClearSessionCookie())
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

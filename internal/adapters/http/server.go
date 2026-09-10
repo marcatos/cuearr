@@ -56,6 +56,7 @@ func (s *Server) routes() {
 	oidc := s.oidcHandler()
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/v1/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/login", oidc.HandleLogin)
 	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", oidc.HandleCallback)
 	s.mux.HandleFunc("PUT /api/v1/settings/auth", s.handlePutSettingsAuth)

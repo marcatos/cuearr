@@ -393,9 +393,13 @@
     }
   }
 
-  el.logout.onclick = function () {
-    document.cookie = "cuearr_session=; Max-Age=0; path=/";
-    location.hash = "#/login";
+  el.logout.onclick = async function () {
+    try {
+      await api("/api/v1/logout", { method: "POST" });
+    } catch (_) {
+      /* still leave session UI even if network fails */
+    }
+    window.location.href = "/login";
   };
 
   window.addEventListener("hashchange", render);

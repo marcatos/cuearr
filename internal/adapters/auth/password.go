@@ -58,6 +58,18 @@ func NewSessionCookie(secret []byte, ttl time.Duration) (*http.Cookie, error) {
 	}, nil
 }
 
+// ClearSessionCookie returns a cookie that removes the HttpOnly session in the browser.
+func ClearSessionCookie() *http.Cookie {
+	return &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	}
+}
+
 // ValidSessionCookie reports whether c is a valid signed session for secret.
 func ValidSessionCookie(secret []byte, c *http.Cookie) bool {
 	if c == nil || c.Name != SessionCookieName || c.Value == "" || len(secret) == 0 {
