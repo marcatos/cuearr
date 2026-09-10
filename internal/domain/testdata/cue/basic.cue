@@ -1,0 +1,14 @@
+REM GENRE "Test"
+REM DATE 2026
+PERFORMER "Demo Artist"
+TITLE "Demo Album"
+FILE "album.flac" WAVE
+  TRACK 01 AUDIO
+    TITLE "Track One"
+    PERFORMER "Demo Artist"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Track Two"
+    PERFORMER "Demo Artist"
+    INDEX 00 01:00:00
+    INDEX 01 01:00:02
