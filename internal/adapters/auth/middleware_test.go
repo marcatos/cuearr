@@ -104,3 +104,14 @@ func TestMiddleware_BootstrapSettingsAuthDeniedWhenPasswordSet(t *testing.T) {
 		t.Fatalf("status=%d", rec.Code)
 	}
 }
+
+func TestMiddleware_BootstrapSettingsAuthDeniedFromRemote(t *testing.T) {
+	handler := testMiddleware(t, "", testAPIKey)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/auth", nil)
+	req.RemoteAddr = "203.0.113.50:54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

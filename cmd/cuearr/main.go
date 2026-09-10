@@ -164,9 +164,9 @@ func runServe() error {
 	} else if changed {
 		log.Info("auth settings bootstrapped from environment")
 	}
-	sessionSecret, err := auth.NewSessionSecret()
+	sessionSecret, err := auth.LoadOrCreateSessionSecret(cfg.DataDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("session secret: %w", err)
 	}
 	api := httpapi.New(httpapi.Deps{
 		Jobs:          store,
