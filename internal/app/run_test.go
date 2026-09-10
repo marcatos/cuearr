@@ -58,9 +58,10 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 		"/out/01.flac": {Duration: 3 * time.Second},
 		"/out/02.flac": {Duration: 3 * time.Second},
 	}}
+	tagger := &fakeFLACTagger{}
 	runner := app.JobRunner{
 		Store: store, Splitter: splitter, Inspector: inspector,
-		Tagger: &fakeFLACTagger{}, ReadFile: os.ReadFile,
+		Tagger: tagger, ReadFile: os.ReadFile,
 	}
 
 	got, err := runner.RunJob(ctx, job, "/out/album", false)
@@ -78,6 +79,9 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	}
 	if got.FinishedAt.IsZero() {
 		t.Fatal("expected finished_at")
+	}
+	if got.FinishedAt.Before(tagger.calledAt) {
+		t.Fatalf("finished_at=%v precedes final tag at %v", got.FinishedAt, tagger.calledAt)
 	}
 }
 

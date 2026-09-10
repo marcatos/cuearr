@@ -37,12 +37,14 @@ type appliedTags struct {
 }
 
 type fakeFLACTagger struct {
-	err   map[string]error
-	calls []appliedTags
+	err      map[string]error
+	calls    []appliedTags
+	calledAt time.Time
 }
 
 func (f *fakeFLACTagger) ApplyTags(_ context.Context, path string, tags ports.TrackTags) error {
 	f.calls = append(f.calls, appliedTags{path: path, tags: tags})
+	f.calledAt = time.Now().UTC()
 	return f.err[path]
 }
 

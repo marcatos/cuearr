@@ -61,9 +61,9 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 
 	finished := running
 	finished.OutDir = targetOut
-	finished.FinishedAt = time.Now().UTC()
 
 	if splitErr != nil {
+		finished.FinishedAt = time.Now().UTC()
 		finished.Status = domain.JobFailed
 		finished.Error = splitErr.Error()
 		if result.Log != "" {
@@ -88,6 +88,7 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		return r.failJob(ctx, finished, result, err, log)
 	}
 
+	finished.FinishedAt = time.Now().UTC()
 	finished.Status = domain.JobCompleted
 	finished.Log = buildJobLog(result)
 	if err := r.Store.Update(ctx, finished); err != nil {
@@ -109,6 +110,7 @@ func (r JobRunner) failJob(
 	runErr error,
 	log *slog.Logger,
 ) (domain.Job, error) {
+	finished.FinishedAt = time.Now().UTC()
 	finished.Status = domain.JobFailed
 	finished.Error = runErr.Error()
 	finished.Log = buildJobLog(result)
