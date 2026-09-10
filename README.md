@@ -20,7 +20,7 @@
 
 **v0.1.0** is the first tagged release: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.1.0), container [`ghcr.io/marcatos/cuearr:v0.1.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag).
 
-**Roadmap:** [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
+**Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
 **Active now:** **B1** prove the promise ([#15](https://github.com/marcatos/cuearr/issues/15)–[#18](https://github.com/marcatos/cuearr/issues/18), [#14](https://github.com/marcatos/cuearr/issues/14)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). Shipped earlier: atomic job claim, OIDC polish, async scan.
 
