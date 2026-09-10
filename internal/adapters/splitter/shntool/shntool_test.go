@@ -3,10 +3,10 @@ package shntool_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/marcatos/cuearr/internal/adapters/splitter/native"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
 	"github.com/marcatos/cuearr/internal/domain"
 )
@@ -39,16 +39,34 @@ func TestShntoolSplit_BuildsExpectedArgs(t *testing.T) {
 	if fake.lastName != "shntool" {
 		t.Fatalf("bin=%s", fake.lastName)
 	}
-	joined := strings.Join(fake.lastArgs, " ")
-	if !strings.Contains(joined, "split") || !strings.Contains(joined, "/in/album.cue") {
-		t.Fatalf("args=%v", fake.lastArgs)
+	wantArgs := []string{
+		"split",
+		"-f", "/in/album.cue",
+		"-o", "flac",
+		"-d", "/out",
+		"/in/album.flac",
+	}
+	if !reflect.DeepEqual(fake.lastArgs, wantArgs) {
+		t.Fatalf("args=%v want=%v", fake.lastArgs, wantArgs)
 	}
 	_ = res
 }
 
-func TestNativeStub_NotImplemented(t *testing.T) {
-	_, err := native.New().Split(context.Background(), domain.SplitPlan{}, "/out")
-	if !errors.Is(err, domain.ErrNotImplemented) {
-		t.Fatal(err)
+func TestShntoolSplit_NonzeroExitWrapsErrSplitFailed(t *testing.T) {
+	const stderrMsg = "shntool: invalid cue sheet"
+	fake := &fakeRunner{exitCode: 1, stderr: stderrMsg}
+	s := shntool.New(fake, "shntool")
+	plan := domain.SplitPlan{
+		CuePath: "/in/album.cue", ImagePath: "/in/album.flac", WorkDir: "/in",
+	}
+	_, err := s.Split(context.Background(), plan, "/out")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, domain.ErrSplitFailed) {
+		t.Fatalf("errors.Is: got %v", err)
+	}
+	if !strings.Contains(err.Error(), stderrMsg) {
+		t.Fatalf("stderr not in error: %v", err)
 	}
 }
