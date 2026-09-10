@@ -8,6 +8,27 @@
 
 Pre-implementation. Spec under review. Tracking: **GitHub Issues** on [marcatos/cuearr](https://github.com/marcatos/cuearr).
 
+## Build
+
+Requires Go 1.23+.
+
+```bash
+go build -o bin/cuearr ./cmd/cuearr
+```
+
+On Windows:
+
+```powershell
+go build -o bin/cuearr.exe ./cmd/cuearr
+```
+
+## Run
+
+```bash
+./bin/cuearr version
+./bin/cuearr serve   # not implemented yet
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Use GitHub Issues and the provided templates for bugs and feature requests.
