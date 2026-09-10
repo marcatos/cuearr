@@ -8,13 +8,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/marcatos/cuearr/releases"><img alt="releases" src="https://img.shields.io/github/v/release/marcatos/cuearr?include_prereleases&amp;label=release"/></a>
+  <a href="https://github.com/marcatos/cuearr/releases/tag/v0.1.0"><img alt="release" src="https://img.shields.io/github/v/release/marcatos/cuearr?include_prereleases&amp;label=release"/></a>
   <a href="https://github.com/marcatos/cuearr/pkgs/container/cuearr"><img alt="ghcr" src="https://img.shields.io/badge/ghcr-cuearr-0B3D4A"/></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-3ECFB2"/></a>
   <a href="https://github.com/marcatos/cuearr/issues"><img alt="issues" src="https://img.shields.io/github/issues/marcatos/cuearr"/></a>
 </p>
 
 ---
+
+## Status
+
+**v0.1.0** is the first tagged release: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.1.0), container [`ghcr.io/marcatos/cuearr:v0.1.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag).
+
+Open backlog (community welcome): [Issues](https://github.com/marcatos/cuearr/issues) — includes worker claim (#11), OIDC polish (#12), async scan (#13), Docker smoke docs (#14), native engine spike (#10).
 
 ## Why Cuearr exists
 

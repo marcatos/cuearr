@@ -31,3 +31,7 @@ cuearr.db-*
 *.log
 
 .superpowers/
+
+# Agent / SDD scratch (never commit)
+task-*-report.md
+*-review-package.md
