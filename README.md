@@ -31,17 +31,19 @@ go build -o bin/cuearr.exe ./cmd/cuearr
 
 ## Lidarr Connect
 
-Cuearr accepts the same path on the webhook and on a custom script.
+Cuearr accepts the same hook URL for **Connect webhooks** and an optional **custom script**.
 
 1. In Lidarr → **Settings → Connect**, add a **Webhook**.
    - URL: `http://<cuearr-host>:8787/api/v1/hooks/lidarr`
    - Method: **POST**
    - Header: `X-Api-Key` = your Cuearr API key (Settings in the UI, or bootstrap env).
-   - Triggers: **On Download** and/or **On Import** (payload includes `environment.DownloadPath`).
+   - Triggers: **On Download** and/or **On Import**.
+   - The handler resolves a scan path from the JSON body, in order: `path`, `DownloadPath`, `DownloadFolder`, `lidarr_trackfile_path`, `lidarr_release_path`, `Lidarr_AddedTrackPaths` (first entry), `trackFiles[0].path`, then the same keys under `environment` or `env`. File paths are reduced to their parent album directory before enqueue.
 
-2. Optional **Custom Script** (after import): copy [`scripts/lidarr-custom-script.sh`](scripts/lidarr-custom-script.sh) and point Lidarr at it.
+2. Optional **Custom Script** (e.g. after import): copy [`scripts/lidarr-custom-script.sh`](scripts/lidarr-custom-script.sh) and point Lidarr at it.
    - Required env: `CUEARR_URL` (e.g. `http://cuearr:8787`), `CUEARR_API_KEY`.
-   - Lidarr sets `lidarr_episodefile_path` to the imported file; the script posts `{"path":"..."}` to the same hook.
+   - Path resolution (first match): `Lidarr_AddedTrackPaths` (first path), `lidarr_trackfile_path`, `lidarr_release_path`, or the first script argument.
+   - Lidarr sets these when the script runs; the script posts safe JSON (`jq` or `python3`) to the same hook.
 
 Response: `{"job_id":"<uuid>","created":true}` when a new split job is queued (`created:false` if the album was already queued or completed).
 

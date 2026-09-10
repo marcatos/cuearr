@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -62,6 +63,26 @@ func TestExtractLidarrScanPath(t *testing.T) {
 			want:    "/album",
 		},
 		{
+			name:    "trackFiles first path",
+			payload: `{"eventType":"TrackRetag","trackFiles":[{"path":"/music/Artist/Album/01.flac","quality":{"quality":{"name":"FLAC"}}},{"path":"/music/Artist/Album/02.flac"}]}`,
+			want:    "/music/Artist/Album/01.flac",
+		},
+		{
+			name:    "environment lidarr_trackfile_path",
+			payload: `{"environment":{"lidarr_trackfile_path":"/import/Artist/01 Track.flac"}}`,
+			want:    "/import/Artist/01 Track.flac",
+		},
+		{
+			name:    "environment Lidarr_AddedTrackPaths pipe list",
+			payload: `{"environment":{"Lidarr_AddedTrackPaths":"/a/one.flac|/a/two.flac"}}`,
+			want:    "/a/one.flac",
+		},
+		{
+			name:    "top-level lidarr_release_path",
+			payload: `{"lidarr_release_path":"/library/Artist/Album"}`,
+			want:    "/library/Artist/Album",
+		},
+		{
 			name:    "empty path string",
 			payload: `{"path":""}`,
 			wantErr: true,
@@ -92,6 +113,67 @@ func TestExtractLidarrScanPath(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("path=%q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLidarrDirForScan(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "album.flac")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "existing directory unchanged",
+			path: dir,
+			want: dir,
+		},
+		{
+			name: "existing file becomes parent dir",
+			path: file,
+			want: dir,
+		},
+		{
+			name: "missing file path with extension becomes parent",
+			path: filepath.Join(dir, "missing.cue"),
+			want: dir,
+		},
+		{
+			name: "missing path without extension kept as-is",
+			path: filepath.Join(dir, "missingdir"),
+			want: filepath.Join(dir, "missingdir"),
+		},
+		{
+			name:    "empty path",
+			path:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := lidarrDirForScan(tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := filepath.Clean(tt.want)
+			if got != want {
+				t.Fatalf("got %q want %q", got, want)
 			}
 		})
 	}

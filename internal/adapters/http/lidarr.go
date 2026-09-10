@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/marcatos/cuearr/internal/domain"
 )
@@ -56,23 +57,111 @@ func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var lidarrPathTopLevelKeys = []string{
+	"path", "DownloadPath", "DownloadFolder",
+	"lidarr_trackfile_path", "lidarr_release_path", "Lidarr_AddedTrackPaths",
+}
+
+var lidarrPathNestedKeys = []string{
+	"DownloadPath", "DownloadFolder", "path",
+	"Lidarr_AddedTrackPaths", "lidarr_trackfile_path", "lidarr_release_path",
+}
+
 // extractLidarrScanPath reads Lidarr Connect webhooks and custom-script JSON bodies.
 func extractLidarrScanPath(body []byte) (string, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(body, &top); err != nil {
 		return "", errors.New("invalid JSON body")
 	}
-	for _, key := range []string{"path", "DownloadPath", "DownloadFolder"} {
-		if p := jsonStringField(top, key); p != "" {
+	for _, key := range lidarrPathTopLevelKeys {
+		if p := lidarrPathFromStringField(top, key); p != "" {
 			return p, nil
 		}
 	}
+	if p := jsonTrackFilesFirstPath(top); p != "" {
+		return p, nil
+	}
 	for _, nestKey := range []string{"environment", "env"} {
-		if p := nestedStringField(top, nestKey, "DownloadPath", "DownloadFolder", "path"); p != "" {
+		if p := nestedLidarrPathField(top, nestKey); p != "" {
 			return p, nil
 		}
 	}
 	return "", errLidarrPathMissing
+}
+
+func lidarrPathFromStringField(obj map[string]json.RawMessage, key string) string {
+	s := jsonStringField(obj, key)
+	if s == "" {
+		return ""
+	}
+	if key == "Lidarr_AddedTrackPaths" {
+		return firstPathFromAddedTrackPaths(s)
+	}
+	return s
+}
+
+func nestedLidarrPathField(obj map[string]json.RawMessage, nestKey string) string {
+	raw, ok := obj[nestKey]
+	if !ok {
+		return ""
+	}
+	var nested map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &nested); err != nil {
+		return ""
+	}
+	for _, key := range lidarrPathNestedKeys {
+		if p := lidarrPathFromStringField(nested, key); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
+func jsonTrackFilesFirstPath(obj map[string]json.RawMessage) string {
+	raw, ok := obj["trackFiles"]
+	if !ok {
+		return ""
+	}
+	var files []struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &files); err != nil || len(files) == 0 {
+		return ""
+	}
+	return files[0].Path
+}
+
+func firstPathFromAddedTrackPaths(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if raw[0] == '[' {
+		var paths []string
+		if err := json.Unmarshal([]byte(raw), &paths); err == nil {
+			for _, p := range paths {
+				if p = strings.TrimSpace(p); p != "" {
+					return p
+				}
+			}
+			return ""
+		}
+	}
+	for _, part := range splitAddedTrackPaths(raw) {
+		if part = strings.TrimSpace(part); part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+func splitAddedTrackPaths(raw string) []string {
+	for _, sep := range []string{"|", ";", "\n"} {
+		if strings.Contains(raw, sep) {
+			return strings.Split(raw, sep)
+		}
+	}
+	return []string{raw}
 }
 
 func jsonStringField(obj map[string]json.RawMessage, key string) string {
