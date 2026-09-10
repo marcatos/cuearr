@@ -2,32 +2,71 @@
 
 *arr-style daemon that splits **lossless image + CUE** albums into per-track files for Lidarr and Plex.
 
-> Design (approved brainstorm): [`docs/superpowers/specs/2026-09-10-cuearr-design.md`](docs/superpowers/specs/2026-09-10-cuearr-design.md)
+> Design: [`docs/superpowers/specs/2026-09-10-cuearr-design.md`](docs/superpowers/specs/2026-09-10-cuearr-design.md)
 
 ## Status
 
-Pre-implementation. Spec under review. Tracking: **GitHub Issues** on [marcatos/cuearr](https://github.com/marcatos/cuearr).
+**v0.1** feature set is implemented on branch `feat/v1`. Track work on [GitHub Issues](https://github.com/marcatos/cuearr/issues). Tagged releases (`v0.1.0`+) publish binaries and container images after CI on `main` is green.
 
-## Build
+## Quickstart
 
-Requires Go 1.23+.
+### Binary (Linux / macOS / Windows)
+
+1. Download the archive for your OS/arch from [GitHub Releases](https://github.com/marcatos/cuearr/releases) (or build from source below).
+2. Copy [`configs/cuearr.example.yaml`](configs/cuearr.example.yaml) to `cuearr.yaml` and set `data_dir`, `watch_dirs`, and `out_dir`.
+3. On first run, set a local password (stored hashed in SQLite):
+
+   ```bash
+   export CUEARR_INITIAL_PASSWORD='choose-a-strong-password'
+   ./bin/cuearr serve -config cuearr.yaml
+   ```
+
+4. Open **http://127.0.0.1:8787**, sign in, copy the **API key** from Settings (or bootstrap with `CUEARR_API_KEY` before first boot).
+5. Drop a folder containing `album.flac` + `album.cue` under a watch path; Cuearr enqueues a split job. Output lands under `out_dir` (or in-place when enabled).
+
+Build from source (Go 1.23+):
 
 ```bash
 go build -o bin/cuearr ./cmd/cuearr
+./bin/cuearr version
+./bin/cuearr serve -config configs/cuearr.example.yaml
 ```
 
-On Windows:
+Windows:
 
 ```powershell
 go build -o bin/cuearr.exe ./cmd/cuearr
 ```
 
-## Run
+### Tests
+
+Unit tests (default CI):
 
 ```bash
-./bin/cuearr version
-./bin/cuearr serve
+go test ./...
 ```
+
+End-to-end split against a **synthetic** fixture (requires `shntool` and generated audio; skipped otherwise):
+
+```bash
+# Generate silent image + CUE (ffmpeg, or sox+flac on Unix)
+bash scripts/generate_fixture.sh
+# or: pwsh scripts/generate_fixture.ps1
+
+go test ./internal/app -run TestE2E_SplitFixtureWithShntool -count=1
+```
+
+The test is skipped automatically when `shntool` or the fixture files are missing.
+
+## Authentication
+
+| Method | Use |
+|--------|-----|
+| **Local password** | UI login; set on first boot via `CUEARR_INITIAL_PASSWORD` |
+| **API key** | `X-Api-Key` header for `/api/v1/*` and Lidarr hooks; bootstrap with `CUEARR_API_KEY` |
+| **OIDC** (optional) | `CUEARR_OIDC_ENABLED`, `CUEARR_OIDC_ISSUER`, `CUEARR_OIDC_CLIENT_ID`, `CUEARR_OIDC_CLIENT_SECRET`, `CUEARR_OIDC_REDIRECT_URL`, `CUEARR_OIDC_ALLOWED_EMAIL_DOMAINS` — see [`configs/cuearr.example.yaml`](configs/cuearr.example.yaml) |
+
+Session cookies protect the embedded UI; API routes accept the API key without a browser session.
 
 ## Docker
 
@@ -55,7 +94,20 @@ docker run --rm -p 8787:8787 \
   cuearr:local
 ```
 
-Tagged releases publish GitHub release archives (`linux`/`darwin`/`windows` amd64/arm64 where applicable) and push the container image (workflow: `.github/workflows/release.yml`).
+Tagged releases publish GitHub release archives and push the container image (workflow: `.github/workflows/release.yml`).
+
+## Helm
+
+Chart: [`deploy/helm/cuearr`](deploy/helm/cuearr). Requires a cluster with persistent storage for `/data` and mounts for watch/out (defaults use **hostPath**; switch to PVC in `values.yaml`).
+
+```bash
+helm upgrade --install cuearr ./deploy/helm/cuearr \
+  --set auth.initialPassword='choose-a-strong-password' \
+  --set persistence.watch.hostPath=/srv/cuearr/watch \
+  --set persistence.out.hostPath=/srv/cuearr/out
+```
+
+Set `image.tag` to a release tag, or leave empty for `appVersion`. OIDC and existing secrets are configured under `auth.*` and `oidc.*` in [`values.yaml`](deploy/helm/cuearr/values.yaml).
 
 ## Proxmox (LXC)
 
