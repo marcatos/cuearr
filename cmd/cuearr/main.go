@@ -181,6 +181,7 @@ func runServe() error {
 	api := httpapi.New(httpapi.Deps{
 		Jobs:          store,
 		Settings:      settingsStore,
+		Version:       version,
 		SessionSecret: sessionSecret,
 		CookieSecure:  cfg.CookieSecure,
 		RuntimeSettings: func() domain.Settings {
@@ -218,8 +219,13 @@ func runServe() error {
 			})
 		},
 		CheckShntool: func(c context.Context) error {
-			_, currentSplitter := runtimeCfg.Snapshot()
-			return currentSplitter.Available(c)
+			return shntool.New(&execRunner{}, "shntool").Available(c)
+		},
+		CheckMetaflac: func(c context.Context) error {
+			if err := exec.CommandContext(c, "metaflac", "--version").Run(); err != nil {
+				return fmt.Errorf("metaflac available: %w", err)
+			}
+			return nil
 		},
 	})
 	httpSrv := &http.Server{

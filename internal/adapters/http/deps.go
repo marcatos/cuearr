@@ -10,6 +10,7 @@ import (
 type Deps struct {
 	Jobs            ports.JobStore
 	Settings        ports.SettingsStore
+	Version         string
 	Engine          string
 	WatchDirs       []string
 	CookieSecure    bool
@@ -20,4 +21,5 @@ type Deps struct {
 	ScanWatch       func(ctx context.Context) error
 	CheckSQLite     func(ctx context.Context) error
 	CheckShntool    func(ctx context.Context) error
+	CheckMetaflac   func(ctx context.Context) error
 }

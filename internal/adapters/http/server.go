@@ -67,6 +67,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/jobs/{id}", s.handleGetJob)
 	s.mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/v1/settings", s.handlePutSettings)
+	s.mux.HandleFunc("GET /api/v1/diagnostics", s.handleDiagnostics)
 	s.mux.HandleFunc("POST /api/v1/hooks/lidarr", s.handleLidarrHook)
 
 	static := newStaticHandler()
