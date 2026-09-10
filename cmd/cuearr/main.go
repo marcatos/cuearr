@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/marcatos/cuearr/internal/adapters/audio/metaflac"
 	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
@@ -144,10 +145,14 @@ func runServe() error {
 
 	var wg sync.WaitGroup
 
+	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
 	worker := &app.Worker{
-		Store:   store,
-		Runtime: runtimeCfg,
-		Log:     log,
+		Store:     store,
+		Inspector: audioMetadata,
+		Tagger:    audioMetadata,
+		ReadFile:  os.ReadFile,
+		Runtime:   runtimeCfg,
+		Log:       log,
 	}
 	wg.Add(1)
 	go func() {

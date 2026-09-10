@@ -2,11 +2,13 @@ package app_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/marcatos/cuearr/internal/app"
 	"github.com/marcatos/cuearr/internal/domain"
+	"github.com/marcatos/cuearr/internal/ports"
 )
 
 type recoverableJobStore struct {
@@ -33,16 +35,25 @@ func TestWorker_RunRecoversInterruptedJobsAtStartup(t *testing.T) {
 }
 
 func TestWorker_ClaimProcessesQueuedJob(t *testing.T) {
+	cuePath := writeCue(t, oneTrackCue)
+	imagePath := "/a.flac"
+	outputPath := "/out/01.flac"
 	store := &fakeJobStore{byFP: map[string]domain.Job{
 		"fp": {
 			ID: "job-1", Fingerprint: "fp", Status: domain.JobQueued,
-			CuePath: "/a.cue", ImagePath: "/a.flac", CreatedAt: time.Now().UTC(),
+			CuePath: cuePath, ImagePath: imagePath, CreatedAt: time.Now().UTC(),
 		},
 	}}
-	splitter := &fakeSplitter{}
+	splitter := &fakeSplitter{result: ports.SplitResult{OutputFiles: []string{outputPath}}}
 	worker := &app.Worker{
 		Store:    store,
 		Splitter: splitter,
+		Inspector: &fakeFLACInspector{info: map[string]ports.FLACInfo{
+			imagePath:  {Duration: 3 * time.Second},
+			outputPath: {Duration: 3 * time.Second},
+		}},
+		Tagger:   &fakeFLACTagger{},
+		ReadFile: os.ReadFile,
 		OutDir:   t.TempDir(),
 		Interval: 20 * time.Millisecond,
 	}

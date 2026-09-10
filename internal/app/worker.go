@@ -11,13 +11,16 @@ import (
 )
 
 type Worker struct {
-	Store    ports.JobStore
-	Splitter ports.Splitter
-	Runtime  *RuntimeConfig
-	OutDir   string
-	InPlace  bool
-	Log      *slog.Logger
-	Interval time.Duration
+	Store     ports.JobStore
+	Splitter  ports.Splitter
+	Inspector ports.FLACInspector
+	Tagger    ports.FLACTagger
+	ReadFile  func(string) ([]byte, error)
+	Runtime   *RuntimeConfig
+	OutDir    string
+	InPlace   bool
+	Log       *slog.Logger
+	Interval  time.Duration
 }
 
 func (w *Worker) logger() *slog.Logger {
@@ -79,7 +82,11 @@ func (w *Worker) runOnce(ctx context.Context) error {
 		settings, currentSplitter := w.Runtime.Snapshot()
 		splitter, outDir, inPlace = currentSplitter, settings.OutDir, settings.InPlace
 	}
-	_, runErr := RunJob(ctx, w.Store, splitter, job, outDir, inPlace)
+	runner := JobRunner{
+		Store: w.Store, Splitter: splitter, Inspector: w.Inspector,
+		Tagger: w.Tagger, ReadFile: w.ReadFile, Log: log,
+	}
+	_, runErr := runner.RunJob(ctx, job, outDir, inPlace)
 	totalMs := time.Since(start).Milliseconds()
 	if runErr != nil {
 		log.Warn("worker job finished with error", "job_id", job.ID, "total_ms", totalMs, "error", runErr.Error())
