@@ -18,11 +18,11 @@
 
 ## Status
 
-**v0.1.0** is the first tagged release: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.1.0), container [`ghcr.io/marcatos/cuearr:v0.1.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag).
+**v0.2.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.2.0), container [`ghcr.io/marcatos/cuearr:v0.2.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). Includes B1 verified splits + B2 file reliability. See [releasing](docs/releasing.md).
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Active now:** **B2** file reliability ([#19](https://github.com/marcatos/cuearr/issues/19)–[#22](https://github.com/marcatos/cuearr/issues/22), [overview](docs/file-reliability.md)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). **B1** prove-the-promise is complete.
+**Active now:** **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)) and **B3** assisted beta ([#23](https://github.com/marcatos/cuearr/issues/23)–[#25](https://github.com/marcatos/cuearr/issues/25)). **B1**/**B2** shipped in v0.2.0 ([file reliability](docs/file-reliability.md)).
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 

@@ -1,0 +1,54 @@
+---
+description: When and how Cuearr agents must cut GitHub Releases
+alwaysApply: true
+---
+
+# Cuearr — Releases (mandatory for agents)
+
+Releases do **not** happen on merge alone. Agents must create a release whenever shippable work lands on `main` and users would otherwise still see only an older tag.
+
+## When to release (do it without waiting to be asked)
+
+Cut a release after **any** of these is true on `main`:
+
+1. A **roadmap batch** PR is merged (e.g. B1, B2, B3…).
+2. User-visible behaviour ships: verify/split quality, packaging, Docker image behaviour, API/UI that operators rely on.
+3. The session ends with `main` **ahead of the latest GitHub release tag** by shippable commits — and you merged or the user confirmed the work is done.
+
+**Do not** skip the release because “docs only” if the batch also included code that operators run. Pure typo/doc PRs may stay unreleased.
+
+**Do not** invent a release for WIP branches or unmerged PRs.
+
+## Version bump (semver, `v*` tags)
+
+| Bump | When |
+|------|------|
+| **MINOR** (`v0.1.0` → `v0.2.0`) | New batch / features (default after B1, B2, …) |
+| **PATCH** (`v0.2.0` → `v0.2.1`) | Fixes only on top of the last release |
+| **MAJOR** | Breaking CLI/API/config/data migrations that require operator action |
+
+Always prefix tags with `v` (workflow trigger: `push` tags `v*`).
+
+## How (account + commands)
+
+1. `gh auth switch --user marcatos` and verify `gh api user --jq .login` → `marcatos`.
+2. On up-to-date `main`: `git fetch --tags origin` and `gh release list`.
+3. Choose next version; write notes (batches/issues closed, breaking changes, Docker tag).
+4. Annotated tag on the merge commit and push:
+
+```bash
+git tag -a v0.X.Y -m "v0.X.Y — short summary"
+git push origin v0.X.Y
+```
+
+5. Confirm workflow `release` succeeds (binaries + GHCR `ghcr.io/marcatos/cuearr:v0.X.Y` and `:latest`).
+6. Update README **Status** line if it still cites the previous release.
+7. Tell the user the release URL: `https://github.com/marcatos/cuearr/releases/tag/v0.X.Y`.
+
+Do **not** use force-push on tags already published. Do **not** publish from the work account.
+
+## Session checklist (end of shippable work)
+
+- [ ] Latest release tag == intended ship commit (or newer release created)
+- [ ] `gh release view` shows assets / notes
+- [ ] README Status points at the new tag (if applicable)
