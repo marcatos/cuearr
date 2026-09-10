@@ -45,7 +45,7 @@ Cuearr focuses on **verified** splits and a clear Lidarr-oriented path (see stra
 - **Embedded UI** — queue, history/logs, settings (port **8787**)
 - **Auth** — local password, API key (`X-Api-Key`), optional **OIDC** (e.g. Authentik) with email-domain allow-list + `email_verified`
 - **Engine** — default **shntool** (+ cuetools/flac in the container); native Go splitter is deferred ([#10](https://github.com/marcatos/cuearr/issues/10))
-- **Persistence** — SQLite jobs + settings; UI settings apply at runtime (watcher restart when watch dirs change)
+- **Persistence** — SQLite jobs + settings; UI settings apply at runtime (watcher restart when watch dirs change); [job fingerprint](docs/fingerprint.md) includes full image content hash
 - **Ops-friendly packaging** — binary releases, Docker/Compose, Helm, Proxmox LXC script, Unraid template
 
 ## Not in scope
