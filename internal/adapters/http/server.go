@@ -66,4 +66,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/v1/settings", s.handlePutSettings)
 	s.mux.HandleFunc("POST /api/v1/hooks/lidarr", s.handleLidarrHook)
+
+	static := newStaticHandler()
+	s.mux.Handle("GET /{$}", static)
+	s.mux.Handle("GET /login", static)
+	s.mux.Handle("GET /login/{$}", static)
+	s.mux.Handle("GET /app.js", static)
+	s.mux.Handle("GET /styles.css", static)
 }

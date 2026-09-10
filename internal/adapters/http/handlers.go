@@ -28,12 +28,34 @@ type jobJSON struct {
 	FinishedAt  string `json:"finished_at,omitempty"`
 }
 
+type authSettingsJSON struct {
+	PasswordConfigured      bool     `json:"password_configured,omitempty"`
+	APIKeySet               bool     `json:"api_key_set,omitempty"`
+	OIDCClientSecretSet     bool     `json:"oidc_client_secret_set,omitempty"`
+	Password                string   `json:"password,omitempty"`
+	APIKey                  string   `json:"api_key,omitempty"`
+	OIDCEnabled             bool     `json:"oidc_enabled,omitempty"`
+	OIDCIssuer              string   `json:"oidc_issuer,omitempty"`
+	OIDCClientID            string   `json:"oidc_client_id,omitempty"`
+	OIDCClientSecret        string   `json:"oidc_client_secret,omitempty"`
+	OIDCRedirectURL         string   `json:"oidc_redirect_url,omitempty"`
+	OIDCAllowedEmailDomains []string `json:"oidc_allowed_email_domains,omitempty"`
+}
+
 type settingsJSON struct {
-	WatchDirs []string `json:"watch_dirs"`
-	OutDir    string   `json:"out_dir"`
-	InPlace   bool     `json:"in_place"`
-	Engine    string   `json:"engine"`
-	Auth      struct{} `json:"auth"`
+	WatchDirs []string         `json:"watch_dirs"`
+	OutDir    string           `json:"out_dir"`
+	InPlace   bool             `json:"in_place"`
+	Engine    string           `json:"engine"`
+	Auth      authSettingsJSON `json:"auth"`
+}
+
+type settingsPutJSON struct {
+	WatchDirs []string          `json:"watch_dirs"`
+	OutDir    string            `json:"out_dir"`
+	InPlace   bool              `json:"in_place"`
+	Engine    string            `json:"engine"`
+	Auth      *authSettingsJSON `json:"auth"`
 }
 
 func jobToJSON(j domain.Job) jobJSON {
@@ -64,6 +86,16 @@ func settingsToJSON(s domain.Settings) settingsJSON {
 		OutDir:    s.OutDir,
 		InPlace:   s.InPlace,
 		Engine:    s.Engine,
+		Auth: authSettingsJSON{
+			PasswordConfigured:      s.Auth.PasswordHash != "",
+			APIKeySet:               s.Auth.APIKey != "",
+			OIDCClientSecretSet:     s.Auth.OIDCClientSecret != "",
+			OIDCEnabled:             s.Auth.OIDCEnabled,
+			OIDCIssuer:              s.Auth.OIDCIssuer,
+			OIDCClientID:            s.Auth.OIDCClientID,
+			OIDCRedirectURL:         s.Auth.OIDCRedirectURL,
+			OIDCAllowedEmailDomains: append([]string(nil), s.Auth.OIDCAllowedEmailDomains...),
+		},
 	}
 }
 
@@ -73,8 +105,32 @@ func settingsFromJSON(in settingsJSON) domain.Settings {
 		OutDir:    in.OutDir,
 		InPlace:   in.InPlace,
 		Engine:    in.Engine,
-		Auth:      domain.AuthSettings{},
 	}
+}
+
+func mergeAuthSettings(existing domain.AuthSettings, in authSettingsJSON) (domain.AuthSettings, error) {
+	out := existing
+	out.OIDCEnabled = in.OIDCEnabled
+	out.OIDCIssuer = in.OIDCIssuer
+	out.OIDCClientID = in.OIDCClientID
+	out.OIDCRedirectURL = in.OIDCRedirectURL
+	if in.OIDCAllowedEmailDomains != nil {
+		out.OIDCAllowedEmailDomains = append([]string(nil), in.OIDCAllowedEmailDomains...)
+	}
+	if in.OIDCClientSecret != "" {
+		out.OIDCClientSecret = in.OIDCClientSecret
+	}
+	if in.APIKey != "" {
+		out.APIKey = in.APIKey
+	}
+	if in.Password != "" {
+		hash, err := auth.HashPassword(in.Password)
+		if err != nil {
+			return domain.AuthSettings{}, err
+		}
+		out.PasswordHash = hash
+	}
+	return out, nil
 }
 
 func formatTime(t time.Time) string {
@@ -255,18 +311,30 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	var body settingsJSON
+	var body settingsPutJSON
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	settings := settingsFromJSON(body)
+	settings := domain.Settings{
+		WatchDirs: body.WatchDirs,
+		OutDir:    body.OutDir,
+		InPlace:   body.InPlace,
+		Engine:    body.Engine,
+	}
 	existing, err := s.deps.Settings.Get(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	settings.Auth = existing.Auth
+	if body.Auth != nil {
+		settings.Auth, err = mergeAuthSettings(existing.Auth, *body.Auth)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	if err := s.deps.Settings.Put(r.Context(), settings); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
