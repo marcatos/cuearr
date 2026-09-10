@@ -374,6 +374,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	if body.Engine == "native" {
+		writeError(w, http.StatusBadRequest, "native engine is not supported; use shntool")
+		return
+	}
 	settings := domain.Settings{
 		WatchDirs:  body.WatchDirs,
 		OutDir:     body.OutDir,

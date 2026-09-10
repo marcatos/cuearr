@@ -153,7 +153,7 @@ HTTPS reverse proxy: set `cookie_secure: true` / `CUEARR_COOKIE_SECURE=true`.
 ## Configuration notes
 
 - First boot seeds watch/out/engine from YAML into SQLite; **SQLite wins afterwards**.
-- `PUT /api/v1/settings` updates runtime (watcher restarts if watch dirs change). HTTP listen address and `data_dir` still need a process restart.
+- `PUT /api/v1/settings` updates runtime (watcher restarts if watch dirs change). The only supported `engine` value is `shntool`; requests selecting deferred `native` return `400 Bad Request`. HTTP listen address and `data_dir` still need a process restart.
 - Non–in-place jobs write under `out_dir/<album-subdir>/` so default shntool names do not collide across albums.
 
 ## Development
