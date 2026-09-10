@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,8 +62,45 @@ func (s *Splitter) Split(ctx context.Context, plan domain.SplitPlan, outDir stri
 			fmt.Errorf("%w: %s", domain.ErrSplitFailed, strings.TrimSpace(stderr))
 	}
 
+	outputFiles, err := listOutputFlacFiles(outDir)
+	if err != nil {
+		return ports.SplitResult{Log: log, Duration: duration}, err
+	}
+	if len(outputFiles) == 0 {
+		return ports.SplitResult{Log: log, Duration: duration},
+			fmt.Errorf("%w: no FLAC output files in %s", domain.ErrSplitFailed, outDir)
+	}
+
 	return ports.SplitResult{
-		Log:      log,
-		Duration: duration,
+		OutputFiles: outputFiles,
+		Log:         log,
+		Duration:    duration,
 	}, nil
+}
+
+func listOutputFlacFiles(outDir string) ([]string, error) {
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		return nil, fmt.Errorf("list output FLAC files in %q: %w", outDir, err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(e.Name()), ".flac") {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	files := make([]string, 0, len(names))
+	for _, name := range names {
+		abs, err := filepath.Abs(filepath.Join(outDir, name))
+		if err != nil {
+			return nil, fmt.Errorf("absolute path for output FLAC %q: %w", name, err)
+		}
+		files = append(files, abs)
+	}
+	return files, nil
 }
