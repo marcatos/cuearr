@@ -33,14 +33,17 @@ go build -o bin/cuearr.exe ./cmd/cuearr
 
 Image: [`ghcr.io/marcatos/cuearr`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (multi-arch `linux/amd64`, `linux/arm64`). Runtime includes **shntool**, **cuetools**, and **flac**.
 
-Build and run with Compose (from repo root):
+Build and run with Compose from `deploy/docker` (Compose resolves `./watch` and `./out` relative to that directory):
 
 ```bash
+cd deploy/docker
 export CUEARR_INITIAL_PASSWORD='choose-a-strong-password'
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose up -d --build
 ```
 
-Volumes: **`cuearr-data`** (SQLite + settings under `/data`), host **`watch`** → `/watch`, host **`out`** → `/out`. Override paths with `CUEARR_WATCH_DIR` / `CUEARR_OUT_DIR`. Optional bootstrap env: `CUEARR_API_KEY`.
+Volumes: **`cuearr-data`** (SQLite + settings under `/data`), host **`deploy/docker/watch`** → `/watch`, host **`deploy/docker/out`** → `/out`. Override bind paths with `CUEARR_WATCH_DIR` / `CUEARR_OUT_DIR` (paths relative to `deploy/docker` unless absolute). Optional bootstrap env: `CUEARR_API_KEY`.
+
+The container runs as user **`cuearr` (UID 1000)**; bind-mounted watch/out directories must be readable/writable by that UID if permissions matter on your host.
 
 Manual build:
 
