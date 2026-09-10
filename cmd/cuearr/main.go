@@ -18,6 +18,7 @@ import (
 
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
+	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
 	"github.com/marcatos/cuearr/internal/adapters/logging"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/native"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
@@ -156,16 +157,33 @@ func runServe() error {
 	if addr == "" {
 		addr = ":8787"
 	}
+	settingsStore := store.Settings()
+	api := httpapi.New(httpapi.Deps{
+		Jobs:      store,
+		Settings:  settingsStore,
+		Engine:    cfg.Engine,
+		WatchDirs: cfg.WatchDirs,
+		CreateJob: func(c context.Context, path string) (domain.Job, bool, error) {
+			return app.ScanDir(c, path, store, cfg.Engine, os.ReadFile, listDirEntries)
+		},
+		ScanWatch: func(c context.Context) error {
+			return app.ScanAll(cfg.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+				scanCtx(dir)
+				return nil
+			})
+		},
+		CheckShntool: func(c context.Context) error {
+			return splitter.Available(c)
+		},
+	})
 	httpSrv := &http.Server{
-		Addr: addr,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.NotFound(w, r)
-		}),
+		Addr:    addr,
+		Handler: api.Handler(),
 	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Info("http listening (API routes in Task 9)", "addr", addr)
+		log.Info("http listening", "addr", addr)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server exited", "error", err.Error())
 			cancel()
