@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
 	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
@@ -158,9 +159,19 @@ func runServe() error {
 		addr = ":8787"
 	}
 	settingsStore := store.Settings()
+	if _, changed, err := auth.Bootstrap(ctx, settingsStore); err != nil {
+		return fmt.Errorf("auth bootstrap: %w", err)
+	} else if changed {
+		log.Info("auth settings bootstrapped from environment")
+	}
+	sessionSecret, err := auth.NewSessionSecret()
+	if err != nil {
+		return err
+	}
 	api := httpapi.New(httpapi.Deps{
-		Jobs:      store,
-		Settings:  settingsStore,
+		Jobs:          store,
+		Settings:      settingsStore,
+		SessionSecret: sessionSecret,
 		Engine:    cfg.Engine,
 		WatchDirs: cfg.WatchDirs,
 		CreateJob: func(c context.Context, path string) (domain.Job, bool, error) {

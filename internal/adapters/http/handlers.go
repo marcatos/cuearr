@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/domain"
 )
 
@@ -260,11 +261,93 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings := settingsFromJSON(body)
+	existing, err := s.deps.Settings.Get(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	settings.Auth = existing.Auth
 	if err := s.deps.Settings.Put(r.Context(), settings); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, settingsToJSON(settings))
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	settings, err := s.deps.Settings.Get(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if settings.Auth.PasswordHash == "" {
+		writeError(w, http.StatusUnauthorized, "password not configured")
+		return
+	}
+	if !auth.CheckPassword(settings.Auth.PasswordHash, req.Password) {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	cookie, err := auth.NewSessionCookie(s.deps.SessionSecret, 7*24*time.Hour)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "session error")
+		return
+	}
+	http.SetCookie(w, cookie)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	settings, err := s.deps.Settings.Get(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if settings.Auth.PasswordHash != "" {
+		writeError(w, http.StatusForbidden, "auth already configured")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+		APIKey   string `json:"api_key,omitempty"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.Password == "" {
+		writeError(w, http.StatusBadRequest, "password is required")
+		return
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	settings.Auth.PasswordHash = hash
+	if req.APIKey != "" {
+		settings.Auth.APIKey = req.APIKey
+	}
+	if err := s.deps.Settings.Put(r.Context(), settings); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {

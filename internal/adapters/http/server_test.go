@@ -76,17 +76,47 @@ func (m *memSettingsStore) Put(_ context.Context, s domain.Settings) error {
 
 var _ ports.SettingsStore = (*memSettingsStore)(nil)
 
+const testAPIKey = "test-api-key"
+
 func newTestServer(t *testing.T, jobs ports.JobStore, createJob func(context.Context, string) (domain.Job, bool, error)) *httptest.Server {
 	t.Helper()
+	settings := &memSettingsStore{
+		s: domain.Settings{
+			Auth: domain.AuthSettings{
+				PasswordHash: "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+				APIKey:       testAPIKey,
+			},
+		},
+	}
 	srv := httpapi.New(httpapi.Deps{
-		Jobs:      jobs,
-		Settings:  &memSettingsStore{},
-		Engine:    "shntool",
-		WatchDirs: []string{"/watch"},
-		CreateJob: createJob,
-		ScanWatch: func(context.Context) error { return nil },
+		Jobs:          jobs,
+		Settings:      settings,
+		SessionSecret: []byte("test-session-secret"),
+		Engine:        "shntool",
+		WatchDirs:     []string{"/watch"},
+		CreateJob:     createJob,
+		ScanWatch:     func(context.Context) error { return nil },
 	})
 	return httptest.NewServer(srv.Handler())
+}
+
+func apiGet(url string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Api-Key", testAPIKey)
+	return http.DefaultClient.Do(req)
+}
+
+func apiPost(url, contentType string, body *bytes.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-Api-Key", testAPIKey)
+	return http.DefaultClient.Do(req)
 }
 
 func TestHealth_OK(t *testing.T) {
@@ -131,7 +161,7 @@ func TestCreateJob(t *testing.T) {
 	defer ts.Close()
 
 	payload := []byte(`{"path":"/album/dir"}`)
-	res, err := http.Post(ts.URL+"/api/v1/jobs", "application/json", bytes.NewReader(payload))
+	res, err := apiPost(ts.URL+"/api/v1/jobs", "application/json", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +191,7 @@ func TestListJobs(t *testing.T) {
 	ts := newTestServer(t, jobs, nil)
 	defer ts.Close()
 
-	res, err := http.Get(ts.URL + "/api/v1/jobs")
+	res, err := apiGet(ts.URL + "/api/v1/jobs")
 	if err != nil {
 		t.Fatal(err)
 	}
