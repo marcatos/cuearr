@@ -1,0 +1,14 @@
+# Cuearr — GitHub account (personal only)
+
+This repo is **personal**: owner `marcatos`, remote `git@github.com-personal:marcatos/cuearr.git`.
+
+## Mandatory
+
+- Before any `gh` call (issues, releases, PRs, API): `gh auth switch --user marcatos` and verify `gh api user --jq .login` prints `marcatos`.
+- Never use the work account `yamasimo` / `yamabeast` against this repo.
+- Git push/pull: keep SSH host `github.com-personal` (do not rewrite to work `github.com`).
+- Tracker: **GitHub Issues** on `marcatos/cuearr` only (not Plane, not work Linear/Jira).
+
+## Why
+
+A previous session left `gh` active as `yamasimo`, which triggered failed CloseIssue calls and notifications on the work account.
