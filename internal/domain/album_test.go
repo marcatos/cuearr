@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,6 +58,36 @@ func TestFingerprint_IdenticalInputsSameFingerprint(t *testing.T) {
 	b := Fingerprint(cuePath, imagePath, cueBytes, img)
 	if a != b {
 		t.Fatalf("a=%q b=%q", a, b)
+	}
+}
+
+func TestHashFileContent_SHA256(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "image.flac")
+	if err := os.WriteFile(path, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := HashFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+	if got != want {
+		t.Fatalf("hash=%q want=%q", got, want)
+	}
+}
+
+func TestHashFileContent_UsesInjectedHasher(t *testing.T) {
+	original := HashFile
+	t.Cleanup(func() { HashFile = original })
+	HashFile = func(path string) (string, error) {
+		if path != "virtual.flac" {
+			t.Fatalf("path=%q", path)
+		}
+		return "injected", nil
+	}
+	got, err := HashFileContent("virtual.flac")
+	if err != nil || got != "injected" {
+		t.Fatalf("hash=%q err=%v", got, err)
 	}
 }
 
