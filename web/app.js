@@ -244,6 +244,9 @@
   async function renderJob(id) {
     el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
     const j = await api("/api/v1/jobs/" + encodeURIComponent(id));
+    if (route().name !== "job" || route().id !== id) {
+      return;
+    }
     const err = j.error ? '<p class="msg err">' + esc(j.error) + "</p>" : "";
     const failedActions =
       j.status === "failed"
@@ -320,6 +323,9 @@
   async function renderSettings() {
     el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
     const s = await api("/api/v1/settings");
+    if (route().name !== "settings") {
+      return;
+    }
     const auth = s.auth || {};
     const watch = (s.watch_dirs || []).join("\n");
     const domains = (auth.oidc_allowed_email_domains || []).join(", ");
