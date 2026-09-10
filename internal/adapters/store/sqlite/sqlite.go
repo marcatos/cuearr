@@ -18,8 +18,6 @@ var (
 	_ ports.SettingsStore = (*SettingsStore)(nil)
 )
 
-var ErrNotFound = errors.New("not found")
-
 type Store struct {
 	db *sql.DB
 }
@@ -112,7 +110,7 @@ WHERE id = ?`,
 		return fmt.Errorf("update job rows: %w", err)
 	}
 	if n == 0 {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 	return nil
 }
@@ -157,7 +155,7 @@ SELECT id, fingerprint, cue_path, image_path, out_dir, status, engine, log_text,
 func (s *Store) scanJob(row *sql.Row) (domain.Job, error) {
 	job, err := scanJobRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Job{}, ErrNotFound
+		return domain.Job{}, domain.ErrNotFound
 	}
 	return job, err
 }

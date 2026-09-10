@@ -112,8 +112,8 @@ func TestJobStore_getNotFound(t *testing.T) {
 	store := openTestStore(t)
 
 	_, err := store.Get(ctx, "missing")
-	if !errors.Is(err, sqlite.ErrNotFound) {
-		t.Fatalf("get missing: err=%v want ErrNotFound", err)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get missing: err=%v want domain.ErrNotFound", err)
 	}
 }
 
