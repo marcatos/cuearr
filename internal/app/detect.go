@@ -1,19 +1,38 @@
 package app
 
 import (
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/marcatos/cuearr/internal/domain"
 )
 
-func DetectAlbum(dir string, readFile func(string) ([]byte, error), listDir func(string) ([]domain.DirEntry, error)) (domain.SplitPlan, error) {
+func DetectAlbum(
+	dir string,
+	readFile func(string) ([]byte, error),
+	listDir func(string) ([]domain.DirEntry, error),
+	statFile func(string) (domain.FileStat, error),
+	hashFile func(string) (string, error),
+) (domain.SplitPlan, error) {
+	if statFile == nil {
+		statFile = statImageFile
+	}
+	if hashFile == nil {
+		hashFile = domain.HashFileContent
+	}
+
 	entries, err := listDir(dir)
 	if err != nil {
 		return domain.SplitPlan{}, err
 	}
 
-	cueName := pickCueFile(entries)
+	cueName, err := pickSingleCueFile(entries)
+	if err != nil {
+		return domain.SplitPlan{}, err
+	}
 	if cueName == "" {
 		return domain.SplitPlan{}, domain.ErrImageNotFound
 	}
@@ -33,15 +52,57 @@ func DetectAlbum(dir string, readFile func(string) ([]byte, error), listDir func
 	if err != nil {
 		return domain.SplitPlan{}, err
 	}
-	plan.Fingerprint = domain.Fingerprint(plan.CuePath, plan.ImagePath, cueBytes)
+
+	img, err := imageIdentity(plan.ImagePath, statFile, hashFile)
+	if err != nil {
+		return domain.SplitPlan{}, err
+	}
+	plan.Fingerprint = domain.Fingerprint(plan.CuePath, plan.ImagePath, cueBytes, img)
 	return plan, nil
 }
 
-func pickCueFile(entries []domain.DirEntry) string {
+func statImageFile(path string) (domain.FileStat, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return domain.FileStat{}, err
+	}
+	return domain.FileStat{
+		Size:            fi.Size(),
+		ModTimeUnixNano: fi.ModTime().UnixNano(),
+	}, nil
+}
+
+func imageIdentity(imagePath string, statFile func(string) (domain.FileStat, error), hashFile func(string) (string, error)) (domain.ImageIdentity, error) {
+	st, err := statFile(imagePath)
+	if err != nil {
+		return domain.ImageIdentity{}, err
+	}
+	start := time.Now()
+	contentHash, err := hashFile(imagePath)
+	if err != nil {
+		return domain.ImageIdentity{}, err
+	}
+	slog.Default().Info("image hashed for fingerprint",
+		"path", imagePath,
+		"bytes", st.Size,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+	return domain.ImageIdentity{
+		Size:            st.Size,
+		ModTimeUnixNano: st.ModTimeUnixNano,
+		ContentSHA256:   contentHash,
+	}, nil
+}
+
+func pickSingleCueFile(entries []domain.DirEntry) (string, error) {
+	var cueName string
 	for _, e := range entries {
 		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {
-			return e.Name
+			if cueName != "" {
+				return "", domain.ErrAmbiguousCue
+			}
+			cueName = e.Name
 		}
 	}
-	return ""
+	return cueName, nil
 }

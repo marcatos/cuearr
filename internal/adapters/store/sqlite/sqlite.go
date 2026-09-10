@@ -50,13 +50,18 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Create(ctx context.Context, job domain.Job) (domain.Job, error) {
-	_, err := s.db.ExecContext(ctx, `
+	attemptLog, err := encodeAttemptLog(job.AttemptLog)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `
 INSERT INTO jobs (
 	id, fingerprint, cue_path, image_path, out_dir, status, engine, log_text, error_text,
-	created_at, started_at, finished_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	attempt_count, attempt_log, created_at, started_at, finished_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Fingerprint, job.CuePath, job.ImagePath, job.OutDir, job.Status, job.Engine,
-		job.Log, job.Error, formatTime(job.CreatedAt), nullableTime(job.StartedAt), nullableTime(job.FinishedAt),
+		job.Log, job.Error, job.AttemptCount, attemptLog,
+		formatTime(job.CreatedAt), nullableTime(job.StartedAt), nullableTime(job.FinishedAt),
 	)
 	if err != nil {
 		if isFingerprintUniqueViolation(err) {
@@ -102,13 +107,19 @@ func (s *Store) List(ctx context.Context, limit int) ([]domain.Job, error) {
 }
 
 func (s *Store) Update(ctx context.Context, job domain.Job) error {
+	attemptLog, err := encodeAttemptLog(job.AttemptLog)
+	if err != nil {
+		return err
+	}
 	res, err := s.db.ExecContext(ctx, `
 UPDATE jobs SET
 	fingerprint = ?, cue_path = ?, image_path = ?, out_dir = ?, status = ?, engine = ?,
-	log_text = ?, error_text = ?, created_at = ?, started_at = ?, finished_at = ?
+	log_text = ?, error_text = ?, attempt_count = ?, attempt_log = ?,
+	created_at = ?, started_at = ?, finished_at = ?
 WHERE id = ?`,
 		job.Fingerprint, job.CuePath, job.ImagePath, job.OutDir, job.Status, job.Engine,
-		job.Log, job.Error, formatTime(job.CreatedAt), nullableTime(job.StartedAt), nullableTime(job.FinishedAt),
+		job.Log, job.Error, job.AttemptCount, attemptLog,
+		formatTime(job.CreatedAt), nullableTime(job.StartedAt), nullableTime(job.FinishedAt),
 		job.ID,
 	)
 	if err != nil {
@@ -135,7 +146,7 @@ WHERE id = (
 	SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1
 )
 RETURNING id, fingerprint, cue_path, image_path, out_dir, status, engine, log_text, error_text,
-	created_at, started_at, finished_at`,
+	attempt_count, attempt_log, created_at, started_at, finished_at`,
 		domain.JobRunning, formatTime(startedAt), domain.JobQueued,
 	)
 	job, err := scanJobRow(row)
@@ -168,22 +179,23 @@ func (s *SettingsStore) Get(ctx context.Context) (domain.Settings, error) {
 	var payload string
 	err := s.db.QueryRowContext(ctx, `SELECT payload FROM settings WHERE id = 1`).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Settings{}, nil
+		return defaultSettings(domain.Settings{}), nil
 	}
 	if err != nil {
 		return domain.Settings{}, fmt.Errorf("get settings: %w", err)
 	}
 	var settings domain.Settings
 	if payload == "" || payload == "{}" {
-		return domain.Settings{}, nil
+		return defaultSettings(settings), nil
 	}
 	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
 		return domain.Settings{}, fmt.Errorf("decode settings: %w", err)
 	}
-	return settings, nil
+	return defaultSettings(settings), nil
 }
 
 func (s *SettingsStore) Put(ctx context.Context, settings domain.Settings) error {
+	settings = defaultSettings(settings)
 	payload, err := json.Marshal(settings)
 	if err != nil {
 		return fmt.Errorf("encode settings: %w", err)
@@ -197,9 +209,14 @@ ON CONFLICT(id) DO UPDATE SET payload = excluded.payload`, string(payload))
 	return nil
 }
 
+func defaultSettings(settings domain.Settings) domain.Settings {
+	settings.MaxRetries = settings.MaxAttempts()
+	return settings
+}
+
 const jobSelect = `
 SELECT id, fingerprint, cue_path, image_path, out_dir, status, engine, log_text, error_text,
-	created_at, started_at, finished_at FROM jobs`
+	attempt_count, attempt_log, created_at, started_at, finished_at FROM jobs`
 
 func (s *Store) scanJob(row *sql.Row) (domain.Job, error) {
 	job, err := scanJobRow(row)
@@ -217,10 +234,11 @@ func scanJobRow(row rowScanner) (domain.Job, error) {
 	var (
 		job                        domain.Job
 		created, started, finished sql.NullString
+		attemptLog                 string
 	)
 	err := row.Scan(
 		&job.ID, &job.Fingerprint, &job.CuePath, &job.ImagePath, &job.OutDir, &job.Status, &job.Engine,
-		&job.Log, &job.Error, &created, &started, &finished,
+		&job.Log, &job.Error, &job.AttemptCount, &attemptLog, &created, &started, &finished,
 	)
 	if err != nil {
 		return domain.Job{}, err
@@ -242,7 +260,23 @@ func scanJobRow(row rowScanner) (domain.Job, error) {
 			return domain.Job{}, fmt.Errorf("parse finished_at: %w", parseErr)
 		}
 	}
+	if attemptLog != "" {
+		if err := json.Unmarshal([]byte(attemptLog), &job.AttemptLog); err != nil {
+			return domain.Job{}, fmt.Errorf("decode job attempt log: %w", err)
+		}
+	}
 	return job, nil
+}
+
+func encodeAttemptLog(attempts []domain.JobAttempt) (string, error) {
+	if len(attempts) == 0 {
+		return "[]", nil
+	}
+	payload, err := json.Marshal(attempts)
+	if err != nil {
+		return "", fmt.Errorf("encode job attempt log: %w", err)
+	}
+	return string(payload), nil
 }
 
 func formatTime(t time.Time) string {

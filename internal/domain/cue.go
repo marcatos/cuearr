@@ -23,6 +23,7 @@ type CueTrack struct {
 func ParseCue(data []byte) (CueSheet, error) {
 	var sheet CueSheet
 	var cur *CueTrack
+	fileSeen := false
 
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
@@ -50,6 +51,10 @@ func ParseCue(data []byte) (CueSheet, error) {
 				sheet.Title = unquoteRest(line, "TITLE")
 			}
 		case "FILE":
+			if fileSeen {
+				return CueSheet{}, ErrMultiFileCue
+			}
+			fileSeen = true
 			sheet.File = parseCueFile(line)
 		case "TRACK":
 			if len(fields) >= 2 {

@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/marcatos/cuearr/internal/adapters/store/sqlite"
 	"github.com/marcatos/cuearr/internal/domain"
+	_ "modernc.org/sqlite"
 )
 
 func openTestStore(t *testing.T) *sqlite.Store {
@@ -67,6 +69,12 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	completed.Status = domain.JobCompleted
 	completed.FinishedAt = finished
 	completed.Log = "split ok: 12 tracks"
+	completed.AttemptCount = 1
+	completed.AttemptLog = []domain.JobAttempt{{
+		Number: 1,
+		At:     finished,
+		Error:  "first failure",
+	}}
 	if err := store.Update(ctx, completed); err != nil {
 		t.Fatalf("update completed: %v", err)
 	}
@@ -104,6 +112,57 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	}
 	if !stored.StartedAt.Equal(started) || !stored.FinishedAt.Equal(finished) {
 		t.Fatalf("times: started=%v finished=%v", stored.StartedAt, stored.FinishedAt)
+	}
+	if stored.AttemptCount != 1 || len(stored.AttemptLog) != 1 ||
+		stored.AttemptLog[0].Number != 1 || stored.AttemptLog[0].Error != "first failure" ||
+		!stored.AttemptLog[0].At.Equal(finished) {
+		t.Fatalf("attempt history: %+v", stored)
+	}
+}
+
+func TestOpen_MigratesLegacyJobsWithAttemptColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+CREATE TABLE jobs (
+	id TEXT PRIMARY KEY,
+	fingerprint TEXT NOT NULL UNIQUE,
+	cue_path TEXT NOT NULL,
+	image_path TEXT NOT NULL,
+	out_dir TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	engine TEXT NOT NULL DEFAULT '',
+	log_text TEXT NOT NULL DEFAULT '',
+	error_text TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	started_at TEXT,
+	finished_at TEXT
+);
+CREATE TABLE settings (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	payload TEXT NOT NULL DEFAULT '{}'
+);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatalf("open migrated store: %v", err)
+	}
+	defer store.Close()
+	job := domain.Job{
+		ID: "migrated", Fingerprint: "legacy-fp", CuePath: "/a.cue", ImagePath: "/a.flac",
+		Status: domain.JobQueued, CreatedAt: time.Now().UTC(),
+	}
+	if _, err := store.Create(context.Background(), job); err != nil {
+		t.Fatalf("create after migration: %v", err)
 	}
 }
 
@@ -160,13 +219,17 @@ func TestSettingsStore_putGet(t *testing.T) {
 	if len(defaults.WatchDirs) != 0 || defaults.OutDir != "" || defaults.Engine != "" {
 		t.Fatalf("defaults: %+v", defaults)
 	}
+	if defaults.MaxRetries != domain.DefaultMaxRetries {
+		t.Fatalf("default max_retries=%d want %d", defaults.MaxRetries, domain.DefaultMaxRetries)
+	}
 
 	want := domain.Settings{
-		WatchDirs: []string{"/watch/a", "/watch/b"},
-		OutDir:    "/out",
-		InPlace:   true,
-		Engine:    "native",
-		Auth:      domain.AuthSettings{},
+		WatchDirs:  []string{"/watch/a", "/watch/b"},
+		OutDir:     "/out",
+		InPlace:    true,
+		Engine:     "native",
+		MaxRetries: 5,
+		Auth:       domain.AuthSettings{},
 	}
 	if err := settingsStore.Put(ctx, want); err != nil {
 		t.Fatalf("put: %v", err)
@@ -179,7 +242,8 @@ func TestSettingsStore_putGet(t *testing.T) {
 	if len(got.WatchDirs) != 2 || got.WatchDirs[0] != "/watch/a" {
 		t.Fatalf("watch dirs: %+v", got.WatchDirs)
 	}
-	if got.OutDir != want.OutDir || got.InPlace != want.InPlace || got.Engine != want.Engine {
+	if got.OutDir != want.OutDir || got.InPlace != want.InPlace || got.Engine != want.Engine ||
+		got.MaxRetries != want.MaxRetries {
 		t.Fatalf("settings: %+v", got)
 	}
 }

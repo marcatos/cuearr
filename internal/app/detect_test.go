@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,8 +30,20 @@ func TestDetectAlbum_BasicCueAndFlac(t *testing.T) {
 		}
 		return nil, os.ErrNotExist
 	}
+	statFile := func(path string) (domain.FileStat, error) {
+		if strings.HasSuffix(path, "album.flac") {
+			return domain.FileStat{Size: 4096, ModTimeUnixNano: 1700000000000000000}, nil
+		}
+		return domain.FileStat{}, os.ErrNotExist
+	}
+	hashFile := func(path string) (string, error) {
+		if strings.HasSuffix(path, "album.flac") {
+			return "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil
+		}
+		return "", os.ErrNotExist
+	}
 
-	plan, err := app.DetectAlbum(dir, readFile, listDir)
+	plan, err := app.DetectAlbum(dir, readFile, listDir, statFile, hashFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +59,35 @@ func TestDetectAlbum_BasicCueAndFlac(t *testing.T) {
 	if len(plan.Tracks) != 2 {
 		t.Fatalf("tracks=%d", len(plan.Tracks))
 	}
-	if plan.Fingerprint == "" {
-		t.Fatal("expected fingerprint")
+	wantFP := domain.Fingerprint(plan.CuePath, plan.ImagePath, cueBytes, domain.ImageIdentity{
+		Size:            4096,
+		ModTimeUnixNano: 1700000000000000000,
+		ContentSHA256:   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	})
+	if plan.Fingerprint != wantFP {
+		t.Fatalf("fingerprint=%q want=%q", plan.Fingerprint, wantFP)
+	}
+}
+
+func TestDetectAlbum_RejectsMultipleCueFilesBeforeReading(t *testing.T) {
+	readCalled := false
+	listDir := func(string) ([]domain.DirEntry, error) {
+		return []domain.DirEntry{
+			{Name: "disc-1.cue"},
+			{Name: "disc-2.cue"},
+			{Name: "album.flac"},
+		}, nil
+	}
+	readFile := func(string) ([]byte, error) {
+		readCalled = true
+		return nil, nil
+	}
+
+	_, err := app.DetectAlbum("/music/album", readFile, listDir, nil, nil)
+	if !errors.Is(err, domain.ErrAmbiguousCue) {
+		t.Fatalf("got %v, want ErrAmbiguousCue", err)
+	}
+	if readCalled {
+		t.Fatal("readFile called for ambiguous directory")
 	}
 }

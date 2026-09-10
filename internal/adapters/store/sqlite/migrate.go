@@ -1,6 +1,10 @@
 package sqlite
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
 
 const schema = `
 CREATE TABLE IF NOT EXISTS jobs (
@@ -13,6 +17,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 	engine TEXT NOT NULL DEFAULT '',
 	log_text TEXT NOT NULL DEFAULT '',
 	error_text TEXT NOT NULL DEFAULT '',
+	attempt_count INTEGER NOT NULL DEFAULT 0,
+	attempt_log TEXT NOT NULL DEFAULT '[]',
 	created_at TEXT NOT NULL,
 	started_at TEXT,
 	finished_at TEXT
@@ -27,6 +33,20 @@ CREATE TABLE IF NOT EXISTS settings (
 `
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	for _, migration := range []string{
+		`ALTER TABLE jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE jobs ADD COLUMN attempt_log TEXT NOT NULL DEFAULT '[]'`,
+	} {
+		if _, err := db.Exec(migration); err != nil && !isDuplicateColumn(err) {
+			return fmt.Errorf("apply migration %q: %w", migration, err)
+		}
+	}
+	return nil
+}
+
+func isDuplicateColumn(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }

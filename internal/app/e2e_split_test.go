@@ -98,6 +98,7 @@ func TestE2E_RunJobSplitsVerifiesAndTagsFixture(t *testing.T) {
 	}
 	runner := app.JobRunner{
 		Store: store, Splitter: splitter, Inspector: audio, Tagger: audio,
+		Preflight: &fakePreflight{},
 	}
 	finished, err := runner.RunJob(ctx, job, t.TempDir(), false)
 	if err != nil {

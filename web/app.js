@@ -210,11 +210,35 @@
       esc(j.image_path) +
       "</p>" +
       (j.out_dir ? "<p><strong>Out:</strong> " + esc(j.out_dir) + "</p>" : "") +
+      "<p><strong>Attempts:</strong> " +
+      esc(String(j.attempt_count || 0)) +
+      "</p>" +
+      attemptHistory(j.attempts) +
       "<h2>Log</h2>" +
       '<div class="log-box">' +
       esc(j.log || "(empty)") +
       "</div>" +
       "</div>";
+  }
+
+  function attemptHistory(attempts) {
+    if (!attempts || !attempts.length) {
+      return "";
+    }
+    const rows = attempts
+      .map(function (a) {
+        return (
+          "<li>#" +
+          esc(String(a.n)) +
+          " · " +
+          esc(a.at || "") +
+          " · " +
+          esc(a.error || "") +
+          "</li>"
+        );
+      })
+      .join("");
+    return "<h2>Attempt history</h2><ul>" + rows + "</ul>";
   }
 
   async function renderSettings() {
@@ -239,6 +263,9 @@
       engineOpt("shntool", s.engine) +
       engineOpt("native", s.engine) +
       "</select></div>" +
+      '<div class="form-row"><label>Max attempts (total, including first; default 3)</label><input type="number" min="1" name="max_retries" value="' +
+      esc(String(s.max_retries != null ? s.max_retries : 3)) +
+      '" /></div>' +
       "<h2>API access</h2>" +
       '<p class="muted">Optional API key sent as X-Api-Key (stored in this browser only).</p>' +
       '<div class="form-row"><label>Browser API key</label><input type="password" name="browser_api_key" autocomplete="off" value="' +
@@ -303,6 +330,7 @@
         out_dir: f.out_dir.value.trim(),
         in_place: f.in_place.checked,
         engine: f.engine.value,
+        max_retries: parseInt(f.max_retries.value, 10) || 3,
         auth: {
           oidc_enabled: f.oidc_enabled.checked,
           oidc_issuer: f.oidc_issuer.value.trim(),

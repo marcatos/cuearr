@@ -15,6 +15,7 @@ type Worker struct {
 	Splitter  ports.Splitter
 	Inspector ports.FLACInspector
 	Tagger    ports.FLACTagger
+	Preflight ports.JobPreflight
 	ReadFile  func(string) ([]byte, error)
 	Runtime   *RuntimeConfig
 	OutDir    string
@@ -75,21 +76,53 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 
 	log := w.logger()
-	log.Info("worker claimed job", "job_id", job.ID)
 
 	splitter, outDir, inPlace := w.Splitter, w.OutDir, w.InPlace
+	maxAttempts := (domain.Settings{}).MaxAttempts()
 	if w.Runtime != nil {
 		settings, currentSplitter := w.Runtime.Snapshot()
 		splitter, outDir, inPlace = currentSplitter, settings.OutDir, settings.InPlace
+		maxAttempts = settings.MaxAttempts()
 	}
+	if job.AttemptCount >= maxAttempts {
+		job.Status = domain.JobFailed
+		job.FinishedAt = time.Now().UTC()
+		job.Error = "retry budget exhausted during crash recovery"
+		if err := w.Store.Update(ctx, job); err != nil {
+			return err
+		}
+		log.Warn("worker skipped exhausted job",
+			"job_id", job.ID,
+			"attempt", job.AttemptCount,
+			"max_attempts", maxAttempts,
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+		return nil
+	}
+	log.Info("worker claimed job",
+		"job_id", job.ID,
+		"next_attempt", job.AttemptCount+1,
+		"max_attempts", maxAttempts,
+	)
 	runner := JobRunner{
 		Store: w.Store, Splitter: splitter, Inspector: w.Inspector,
-		Tagger: w.Tagger, ReadFile: w.ReadFile, Log: log,
+		Tagger: w.Tagger, Preflight: w.Preflight, ReadFile: w.ReadFile, Log: log,
 	}
-	_, runErr := runner.RunJob(ctx, job, outDir, inPlace)
+	finished, runErr := runner.RunJob(ctx, job, outDir, inPlace)
 	totalMs := time.Since(start).Milliseconds()
 	if runErr != nil {
-		log.Warn("worker job finished with error", "job_id", job.ID, "total_ms", totalMs, "error", runErr.Error())
+		finished = domain.ApplyAttemptFailure(finished, runErr.Error(), time.Now().UTC(), maxAttempts)
+		if err := w.Store.Update(ctx, finished); err != nil {
+			return err
+		}
+		log.Warn("worker job attempt failed",
+			"job_id", job.ID,
+			"attempt", finished.AttemptCount,
+			"max_attempts", maxAttempts,
+			"requeued", finished.Status == domain.JobQueued,
+			"total_ms", totalMs,
+			"error", runErr.Error(),
+		)
 		return nil
 	}
 	log.Info("worker job finished", "job_id", job.ID, "total_ms", totalMs)

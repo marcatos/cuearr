@@ -1,5 +1,7 @@
 package domain
 
+const DefaultMaxRetries = 3
+
 type AuthSettings struct {
 	PasswordHash            string   `json:"password_hash,omitempty"`
 	APIKey                  string   `json:"api_key,omitempty"`
@@ -16,5 +18,15 @@ type Settings struct {
 	OutDir    string
 	InPlace   bool
 	Engine    string
-	Auth      AuthSettings
+	// MaxRetries is the maximum total number of attempts, including the first.
+	// Values less than one use DefaultMaxRetries.
+	MaxRetries int
+	Auth       AuthSettings
+}
+
+func (s Settings) MaxAttempts() int {
+	if s.MaxRetries < 1 {
+		return DefaultMaxRetries
+	}
+	return s.MaxRetries
 }

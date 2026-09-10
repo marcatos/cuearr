@@ -22,7 +22,7 @@
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Active now:** **B1** prove the promise ([#15](https://github.com/marcatos/cuearr/issues/15)–[#18](https://github.com/marcatos/cuearr/issues/18), [#14](https://github.com/marcatos/cuearr/issues/14)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). Shipped earlier: atomic job claim, OIDC polish, async scan.
+**Active now:** **B2** file reliability ([#19](https://github.com/marcatos/cuearr/issues/19)–[#22](https://github.com/marcatos/cuearr/issues/22), [overview](docs/file-reliability.md)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). **B1** prove-the-promise is complete.
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
@@ -45,7 +45,7 @@ Cuearr focuses on **verified** splits and a clear Lidarr-oriented path (see stra
 - **Embedded UI** — queue, history/logs, settings (port **8787**)
 - **Auth** — local password, API key (`X-Api-Key`), optional **OIDC** (e.g. Authentik) with email-domain allow-list + `email_verified`
 - **Engine** — default **shntool** (+ cuetools/flac in the container); native Go splitter is deferred ([#10](https://github.com/marcatos/cuearr/issues/10))
-- **Persistence** — SQLite jobs + settings; UI settings apply at runtime (watcher restart when watch dirs change)
+- **Persistence** — SQLite jobs + settings; UI settings apply at runtime (watcher restart when watch dirs change); [job fingerprint](docs/fingerprint.md) includes full image content hash
 - **Ops-friendly packaging** — binary releases, Docker/Compose, Helm, Proxmox LXC script, Unraid template
 
 ## Not in scope

@@ -25,6 +25,7 @@ type JobRunner struct {
 	Splitter  ports.Splitter
 	Inspector ports.FLACInspector
 	Tagger    ports.FLACTagger
+	Preflight ports.JobPreflight
 	ReadFile  func(string) ([]byte, error)
 	Log       *slog.Logger
 }

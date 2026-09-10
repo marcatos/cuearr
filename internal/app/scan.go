@@ -29,7 +29,7 @@ func ScanDir(
 	readFile func(string) ([]byte, error),
 	listDir func(string) ([]domain.DirEntry, error),
 ) (domain.Job, bool, error) {
-	plan, err := DetectAlbum(dir, readFile, listDir)
+	plan, err := DetectAlbum(dir, readFile, listDir, nil, nil)
 	if err != nil {
 		return domain.Job{}, false, err
 	}

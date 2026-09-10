@@ -27,25 +27,61 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		)
 	}()
 
-	targetOut := outDir
+	stagingBase := outDir
 	if inPlace {
-		targetOut = filepath.Dir(job.ImagePath)
-	} else {
-		targetOut = filepath.Join(outDir, albumOutputKey(job))
+		stagingBase = filepath.Dir(job.ImagePath)
 	}
+	finalOut := filepath.Join(stagingBase, albumOutputKey(job))
 
-	running := job
-	if running.Status != domain.JobRunning {
-		running.Status = domain.JobRunning
-		running.StartedAt = time.Now().UTC()
-		if err := r.Store.Update(ctx, running); err != nil {
-			return job, err
+	running := domain.BeginAttempt(job, time.Now().UTC())
+	if err := r.Store.Update(ctx, running); err != nil {
+		return job, err
+	}
+	log.Info("run job attempt started",
+		"job_id", job.ID,
+		"attempt", running.AttemptCount,
+	)
+
+	preflightStart := time.Now()
+	if r.Preflight == nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, ErrPreflightUnavailable, log)
+	}
+	if err := r.Preflight.Check(ctx, job.ImagePath, stagingBase); err != nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, err, log)
+	}
+	log.Info("run job preflight passed",
+		"job_id", job.ID,
+		"duration_ms", time.Since(preflightStart).Milliseconds(),
+	)
+
+	stagingStart := time.Now()
+	staging, err := PrepareStaging(stagingBase, job.ID)
+	if err != nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, err, log)
+	}
+	log.Info("run job staging prepared",
+		"job_id", job.ID,
+		"staging", staging,
+		"duration_ms", time.Since(stagingStart).Milliseconds(),
+	)
+	cleanup := func(runErr error) error {
+		cleanupStart := time.Now()
+		cleanupErr := CleanupStaging(staging)
+		log.Info("run job staging cleanup finished",
+			"job_id", job.ID,
+			"duration_ms", time.Since(cleanupStart).Milliseconds(),
+			"ok", cleanupErr == nil,
+		)
+		if cleanupErr != nil {
+			return errors.Join(runErr, cleanupErr)
 		}
-	} else if running.StartedAt.IsZero() {
-		running.StartedAt = time.Now().UTC()
-		if err := r.Store.Update(ctx, running); err != nil {
-			return job, err
-		}
+		return runErr
 	}
 
 	plan := domain.SplitPlan{
@@ -55,44 +91,52 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 	}
 
 	splitStart := time.Now()
-	result, splitErr := r.Splitter.Split(ctx, plan, targetOut)
+	result, splitErr := r.Splitter.Split(ctx, plan, staging)
 	splitMs := time.Since(splitStart).Milliseconds()
 	log.Info("run job split finished", "job_id", job.ID, "duration_ms", splitMs, "ok", splitErr == nil)
 
 	finished := running
-	finished.OutDir = targetOut
+	finished.OutDir = finalOut
 
 	if splitErr != nil {
-		finished.FinishedAt = time.Now().UTC()
-		finished.Status = domain.JobFailed
-		finished.Error = splitErr.Error()
-		if result.Log != "" {
-			finished.Log = result.Log
-		}
-		if err := r.Store.Update(ctx, finished); err != nil {
-			return finished, err
-		}
-		log.Warn("run job failed", "job_id", job.ID, "error", splitErr.Error())
-		return finished, splitErr
+		splitErr = cleanup(splitErr)
+		return r.failJob(ctx, finished, result, splitErr, log)
 	}
 
 	if len(result.OutputFiles) == 0 {
-		return r.failJob(ctx, finished, result, errors.New("split produced no output files"), log)
+		runErr := cleanup(errors.New("split produced no output files"))
+		return r.failJob(ctx, finished, result, runErr, log)
 	}
 
 	imageInfo, err := r.Inspector.Inspect(ctx, job.ImagePath)
 	if err != nil {
-		return r.failJob(ctx, finished, result, fmt.Errorf("inspect source image %q: %w", job.ImagePath, err), log)
+		runErr := cleanup(fmt.Errorf("inspect source image %q: %w", job.ImagePath, err))
+		return r.failJob(ctx, finished, result, runErr, log)
 	}
 	if err := r.VerifySplit(ctx, job.CuePath, result.OutputFiles, imageInfo.Duration); err != nil {
-		return r.failJob(ctx, finished, result, err, log)
+		runErr := cleanup(err)
+		return r.failJob(ctx, finished, result, runErr, log)
 	}
 
+	stagedFiles := result.OutputFiles
+	result.OutputFiles = publishedPaths(finalOut, stagedFiles)
 	finished.FinishedAt = time.Now().UTC()
 	finished.Status = domain.JobCompleted
 	finished.Log = buildJobLog(result)
 	if err := r.Store.Update(ctx, finished); err != nil {
-		return finished, err
+		persistErr := fmt.Errorf("persist completed job: %w", err)
+		runErr := cleanup(persistErr)
+		return r.failJob(ctx, finished, result, runErr, log)
+	}
+
+	published, err := PublishTracks(staging, finalOut, job.ID, stagedFiles, PublishReplaceDir)
+	if err != nil {
+		runErr := cleanup(err)
+		return r.failJob(ctx, finished, result, runErr, log)
+	}
+	result.OutputFiles = published
+	if err := cleanup(nil); err != nil {
+		return r.failJob(ctx, finished, result, err, log)
 	}
 
 	log.Info("run job completed",
