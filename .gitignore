@@ -29,3 +29,5 @@ cuearr.db-*
 # Temp
 /tmp/
 *.log
+
+.superpowers/
