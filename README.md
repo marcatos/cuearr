@@ -6,7 +6,15 @@
 
 ## Status
 
-Pre-implementation. Spec under review. Tracking: **GitHub Issues** (public repo).
+Pre-implementation. Spec under review. Tracking: **GitHub Issues** on [marcatos/cuearr](https://github.com/marcatos/cuearr).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Use GitHub Issues and the provided templates for bugs and feature requests.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately.
 
 ## License
 

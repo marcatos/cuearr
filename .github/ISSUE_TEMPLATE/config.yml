@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Design spec
+    url: https://github.com/marcatos/cuearr/blob/main/docs/superpowers/specs/2026-09-10-cuearr-design.md
+    about: Product decisions and non-goals

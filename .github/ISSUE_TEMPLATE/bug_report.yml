@@ -1,0 +1,77 @@
+name: Bug report
+description: Report something that is broken or incorrect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please redact secrets from logs (API keys, passwords, paths with personal data).
+
+  - type: input
+    id: version
+    attributes:
+      label: Cuearr version
+      description: Output of `cuearr version` or the Docker/image tag you are running
+      placeholder: e.g. 0.1.0 or dev
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - binary
+        - docker
+        - proxmox
+        - unraid
+        - helm
+    validations:
+      required: true
+
+  - type: input
+    id: os_arch
+    attributes:
+      label: OS / architecture
+      placeholder: e.g. Linux amd64, Windows arm64
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: What did you do before the problem appeared?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines (redact secrets). Set log level to debug if possible.
+      render: shell
+
+  - type: checkboxes
+    id: sample_cue
+    attributes:
+      label: Sample material
+      options:
+        - label: I can attach a minimal CUE file (no copyrighted audio) if needed
+          required: false

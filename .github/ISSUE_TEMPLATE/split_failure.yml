@@ -1,0 +1,61 @@
+name: Split failure
+description: Report a failed album split (shntool or native engine)
+title: "[Split]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when Cuearr fails to split an image+CUE album. Do not attach copyrighted audio; a CUE file and file extension list is usually enough.
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - shntool
+        - native
+    validations:
+      required: true
+
+  - type: input
+    id: cue_encoding
+    attributes:
+      label: CUE encoding
+      placeholder: e.g. UTF-8, Windows-1252
+    validations:
+      required: true
+
+  - type: textarea
+    id: extensions
+    attributes:
+      label: File extensions present
+      description: Extensions in the album folder (e.g. .flac, .cue, .log)
+      placeholder: .flac, .cue
+    validations:
+      required: true
+
+  - type: input
+    id: shntool_version
+    attributes:
+      label: shntool version
+      description: Output of `shntool --version` (if using shntool engine)
+      placeholder: leave blank if native or unknown
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Full command Cuearr logged
+      description: Copy the exact split command from Cuearr logs
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: exit_code
+    attributes:
+      label: Exit code
+      placeholder: e.g. 1
+    validations:
+      required: true
