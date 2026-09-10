@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>Cuearr</Name>
+  <Repository>ghcr.io/marcatos/cuearr:latest</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/marcatos/cuearr/issues</Support>
+  <Project>https://github.com/marcatos/cuearr</Project>
+  <Overview>*arr-style daemon that splits lossless image + CUE albums into per-track files for Lidarr and Plex.</Overview>
+  <Category>MediaApp:Music</Category>
+  <WebUI>http://[IP]:[PORT:8787]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/marcatos/cuearr/main/deploy/unraid/cuearr.xml</TemplateURL>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <Config Name="Web UI" Target="8787" Default="8787" Mode="tcp" Description="Cuearr HTTP UI and API" Type="Port" Display="always" Required="true" Mask="false">8787</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/cuearr" Mode="rw" Description="SQLite database and settings (/data)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cuearr</Config>
+  <Config Name="Watch folder" Target="/watch" Default="/mnt/user/music/cue-incoming" Mode="rw" Description="Incoming albums (image + .cue) to scan" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/music/cue-incoming</Config>
+  <Config Name="Output folder" Target="/out" Default="/mnt/user/music/cue-ready" Mode="rw" Description="Per-track output for Lidarr/Plex" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/music/cue-ready</Config>
+  <Config Name="CUEARR_INITIAL_PASSWORD" Target="CUEARR_INITIAL_PASSWORD" Default="" Mode="" Description="Bootstrap admin password on first boot (required unless API key set)" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="CUEARR_API_KEY" Target="CUEARR_API_KEY" Default="" Mode="" Description="Optional fixed API key for hooks and automation" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="CUEARR_WATCH_DIR" Target="CUEARR_WATCH_DIR" Default="/watch" Mode="" Description="Override watch path inside container" Type="Variable" Display="advanced" Required="false" Mask="false">/watch</Config>
+  <Config Name="CUEARR_OUT_DIR" Target="CUEARR_OUT_DIR" Default="/out" Mode="" Description="Override output path inside container" Type="Variable" Display="advanced" Required="false" Mask="false">/out</Config>
+  <Config Name="CUEARR_LOG_LEVEL" Target="CUEARR_LOG_LEVEL" Default="info" Mode="" Description="Log level: debug, info, warn, error" Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+</Container>

@@ -57,6 +57,14 @@ docker run --rm -p 8787:8787 \
 
 Tagged releases publish GitHub release archives (`linux`/`darwin`/`windows` amd64/arm64 where applicable) and push the container image (workflow: `.github/workflows/release.yml`).
 
+## Proxmox (LXC)
+
+On a **Proxmox VE** host, run [`deploy/proxmox/cuearr-install.sh`](deploy/proxmox/cuearr-install.sh) as root to create a Debian LXC (privileged or unprivileged), install **shntool** / **cuetools** / **flac**, fetch the latest GitHub release binary, and enable `cuearr.service`. Data lives under `/var/lib/cuearr`; UI on port **8787**. Inside an existing Debian container: `bash cuearr-install.sh --inside`.
+
+## Unraid
+
+Import [`deploy/unraid/cuearr.xml`](deploy/unraid/cuearr.xml) (Docker → Add Container → Template URL) or copy to `/boot/config/plugins/dockerMan/templates-user/`. Image `ghcr.io/marcatos/cuearr`, port **8787**, paths `/data`, `/watch`, `/out`, env `CUEARR_*` (set `CUEARR_INITIAL_PASSWORD` on first run).
+
 ## Lidarr Connect
 
 Cuearr accepts the same hook URL for **Connect webhooks** and an optional **custom script**.
