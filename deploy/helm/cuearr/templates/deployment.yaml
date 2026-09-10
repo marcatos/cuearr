@@ -1,0 +1,104 @@
+{{- $authSecret := include "cuearr.authSecretName" . -}}
+{{- $hasAuthSecret := or .Values.auth.existingSecret (or .Values.auth.initialPassword .Values.auth.apiKey .Values.oidc.enabled .Values.oidc.issuer .Values.oidc.clientId .Values.oidc.clientSecret .Values.oidc.redirectUrl .Values.oidc.allowedEmailDomains) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cuearr.fullname" . }}
+  labels:
+    {{- include "cuearr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cuearr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "cuearr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: cuearr
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ include "cuearr.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          {{- if $hasAuthSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ $authSecret }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.data.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            {{- if .Values.persistence.watch.enabled }}
+            - name: watch
+              mountPath: {{ .Values.persistence.watch.mountPath }}
+            {{- end }}
+            {{- if .Values.persistence.out.enabled }}
+            - name: out
+              mountPath: {{ .Values.persistence.out.mountPath }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- if .Values.persistence.data.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default (include "cuearr.dataPvcName" .) .Values.persistence.data.existingClaim }}
+        {{- end }}
+        {{- if .Values.persistence.watch.enabled }}
+        - name: watch
+          {{- if eq .Values.persistence.watch.mode "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "cuearr.watchPvcName" .) .Values.persistence.watch.existingClaim }}
+          {{- else }}
+          hostPath:
+            path: {{ required "persistence.watch.hostPath is required when persistence.watch.mode is hostPath" .Values.persistence.watch.hostPath }}
+            type: DirectoryOrCreate
+          {{- end }}
+        {{- end }}
+        {{- if .Values.persistence.out.enabled }}
+        - name: out
+          {{- if eq .Values.persistence.out.mode "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "cuearr.outPvcName" .) .Values.persistence.out.existingClaim }}
+          {{- else }}
+          hostPath:
+            path: {{ required "persistence.out.hostPath is required when persistence.out.mode is hostPath" .Values.persistence.out.hostPath }}
+            type: DirectoryOrCreate
+          {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

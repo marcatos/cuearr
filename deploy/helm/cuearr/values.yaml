@@ -1,0 +1,71 @@
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/marcatos/cuearr
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 8787
+
+persistence:
+  data:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    existingClaim: ""
+  watch:
+    enabled: true
+    # hostPath: mount a node directory (typical with hostPath volumes for media libraries)
+    # pvc: request a PersistentVolumeClaim
+    mode: hostPath
+    mountPath: /watch
+    hostPath: /srv/cuearr/watch
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    existingClaim: ""
+  out:
+    enabled: true
+    mode: hostPath
+    mountPath: /out
+    hostPath: /srv/cuearr/out
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    existingClaim: ""
+
+auth:
+  # Use an existing Secret instead of creating one (keys: see templates/secret.yaml).
+  existingSecret: ""
+  initialPassword: ""
+  apiKey: ""
+
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+  clientSecret: ""
+  redirectUrl: ""
+  allowedEmailDomains: ""
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}

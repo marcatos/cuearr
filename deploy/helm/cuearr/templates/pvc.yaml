@@ -1,0 +1,53 @@
+{{- if and .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cuearr.dataPvcName" . }}
+  labels:
+    {{- include "cuearr.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size | quote }}
+  {{- if .Values.persistence.data.storageClass }}
+  storageClassName: {{ .Values.persistence.data.storageClass | quote }}
+  {{- end }}
+---
+{{- end }}
+{{- if and .Values.persistence.watch.enabled (eq .Values.persistence.watch.mode "pvc") (not .Values.persistence.watch.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cuearr.watchPvcName" . }}
+  labels:
+    {{- include "cuearr.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.watch.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.watch.size | quote }}
+  {{- if .Values.persistence.watch.storageClass }}
+  storageClassName: {{ .Values.persistence.watch.storageClass | quote }}
+  {{- end }}
+---
+{{- end }}
+{{- if and .Values.persistence.out.enabled (eq .Values.persistence.out.mode "pvc") (not .Values.persistence.out.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cuearr.outPvcName" . }}
+  labels:
+    {{- include "cuearr.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.out.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.out.size | quote }}
+  {{- if .Values.persistence.out.storageClass }}
+  storageClassName: {{ .Values.persistence.out.storageClass | quote }}
+  {{- end }}
+{{- end }}
