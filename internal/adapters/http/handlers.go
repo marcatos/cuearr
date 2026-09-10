@@ -15,18 +15,20 @@ import (
 )
 
 type jobJSON struct {
-	ID          string `json:"id"`
-	Fingerprint string `json:"fingerprint"`
-	CuePath     string `json:"cue_path"`
-	ImagePath   string `json:"image_path"`
-	OutDir      string `json:"out_dir,omitempty"`
-	Status      string `json:"status"`
-	Engine      string `json:"engine"`
-	Log         string `json:"log,omitempty"`
-	Error       string `json:"error,omitempty"`
-	CreatedAt   string `json:"created_at"`
-	StartedAt   string `json:"started_at,omitempty"`
-	FinishedAt  string `json:"finished_at,omitempty"`
+	ID           string              `json:"id"`
+	Fingerprint  string              `json:"fingerprint"`
+	CuePath      string              `json:"cue_path"`
+	ImagePath    string              `json:"image_path"`
+	OutDir       string              `json:"out_dir,omitempty"`
+	Status       string              `json:"status"`
+	Engine       string              `json:"engine"`
+	Log          string              `json:"log,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	AttemptCount int                 `json:"attempt_count"`
+	Attempts     []domain.JobAttempt `json:"attempts"`
+	CreatedAt    string              `json:"created_at"`
+	StartedAt    string              `json:"started_at,omitempty"`
+	FinishedAt   string              `json:"finished_at,omitempty"`
 }
 
 type authSettingsJSON struct {
@@ -44,33 +46,43 @@ type authSettingsJSON struct {
 }
 
 type settingsJSON struct {
-	WatchDirs []string         `json:"watch_dirs"`
-	OutDir    string           `json:"out_dir"`
-	InPlace   bool             `json:"in_place"`
-	Engine    string           `json:"engine"`
-	Auth      authSettingsJSON `json:"auth"`
+	WatchDirs []string `json:"watch_dirs"`
+	OutDir    string   `json:"out_dir"`
+	InPlace   bool     `json:"in_place"`
+	Engine    string   `json:"engine"`
+	// MaxRetries is the maximum total attempt count, including the first attempt.
+	MaxRetries int              `json:"max_retries"`
+	Auth       authSettingsJSON `json:"auth"`
 }
 
 type settingsPutJSON struct {
-	WatchDirs []string          `json:"watch_dirs"`
-	OutDir    string            `json:"out_dir"`
-	InPlace   bool              `json:"in_place"`
-	Engine    string            `json:"engine"`
-	Auth      *authSettingsJSON `json:"auth"`
+	WatchDirs []string `json:"watch_dirs"`
+	OutDir    string   `json:"out_dir"`
+	InPlace   bool     `json:"in_place"`
+	Engine    string   `json:"engine"`
+	// MaxRetries is the maximum total attempt count, including the first attempt.
+	MaxRetries int               `json:"max_retries"`
+	Auth       *authSettingsJSON `json:"auth"`
 }
 
 func jobToJSON(j domain.Job) jobJSON {
+	attempts := append([]domain.JobAttempt(nil), j.AttemptLog...)
+	if attempts == nil {
+		attempts = []domain.JobAttempt{}
+	}
 	out := jobJSON{
-		ID:          j.ID,
-		Fingerprint: j.Fingerprint,
-		CuePath:     j.CuePath,
-		ImagePath:   j.ImagePath,
-		OutDir:      j.OutDir,
-		Status:      j.Status,
-		Engine:      j.Engine,
-		Log:         j.Log,
-		Error:       j.Error,
-		CreatedAt:   formatTime(j.CreatedAt),
+		ID:           j.ID,
+		Fingerprint:  j.Fingerprint,
+		CuePath:      j.CuePath,
+		ImagePath:    j.ImagePath,
+		OutDir:       j.OutDir,
+		Status:       j.Status,
+		Engine:       j.Engine,
+		Log:          j.Log,
+		Error:        j.Error,
+		AttemptCount: j.AttemptCount,
+		Attempts:     attempts,
+		CreatedAt:    formatTime(j.CreatedAt),
 	}
 	if !j.StartedAt.IsZero() {
 		out.StartedAt = formatTime(j.StartedAt)
@@ -83,10 +95,11 @@ func jobToJSON(j domain.Job) jobJSON {
 
 func settingsToJSON(s domain.Settings) settingsJSON {
 	return settingsJSON{
-		WatchDirs: s.WatchDirs,
-		OutDir:    s.OutDir,
-		InPlace:   s.InPlace,
-		Engine:    s.Engine,
+		WatchDirs:  s.WatchDirs,
+		OutDir:     s.OutDir,
+		InPlace:    s.InPlace,
+		Engine:     s.Engine,
+		MaxRetries: s.MaxAttempts(),
 		Auth: authSettingsJSON{
 			PasswordConfigured:      s.Auth.PasswordHash != "",
 			APIKeySet:               s.Auth.APIKey != "",
@@ -102,10 +115,11 @@ func settingsToJSON(s domain.Settings) settingsJSON {
 
 func settingsFromJSON(in settingsJSON) domain.Settings {
 	return domain.Settings{
-		WatchDirs: in.WatchDirs,
-		OutDir:    in.OutDir,
-		InPlace:   in.InPlace,
-		Engine:    in.Engine,
+		WatchDirs:  in.WatchDirs,
+		OutDir:     in.OutDir,
+		InPlace:    in.InPlace,
+		Engine:     in.Engine,
+		MaxRetries: in.MaxRetries,
 	}
 }
 
@@ -326,11 +340,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings := domain.Settings{
-		WatchDirs: body.WatchDirs,
-		OutDir:    body.OutDir,
-		InPlace:   body.InPlace,
-		Engine:    body.Engine,
+		WatchDirs:  body.WatchDirs,
+		OutDir:     body.OutDir,
+		InPlace:    body.InPlace,
+		Engine:     body.Engine,
+		MaxRetries: body.MaxRetries,
 	}
+	settings.MaxRetries = settings.MaxAttempts()
 	existing, err := s.deps.Settings.Get(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

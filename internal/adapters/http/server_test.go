@@ -207,9 +207,14 @@ func TestCreateJob(t *testing.T) {
 }
 
 func TestListJobs(t *testing.T) {
+	attemptedAt := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 	jobs := &memJobStore{
 		jobs: map[string]domain.Job{
-			"a": {ID: "a", Status: domain.JobQueued, CreatedAt: time.Now().UTC()},
+			"a": {
+				ID: "a", Status: domain.JobQueued, CreatedAt: time.Now().UTC(),
+				AttemptCount: 1,
+				AttemptLog:   []domain.JobAttempt{{Number: 1, At: attemptedAt, Error: "split failed"}},
+			},
 			"b": {ID: "b", Status: domain.JobCompleted, CreatedAt: time.Now().UTC()},
 		},
 	}
@@ -226,7 +231,13 @@ func TestListJobs(t *testing.T) {
 	}
 	var body struct {
 		Jobs []struct {
-			ID string `json:"id"`
+			ID           string `json:"id"`
+			AttemptCount int    `json:"attempt_count"`
+			Attempts     []struct {
+				Number int    `json:"n"`
+				At     string `json:"at"`
+				Error  string `json:"error"`
+			} `json:"attempts"`
 		} `json:"jobs"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
@@ -235,6 +246,17 @@ func TestListJobs(t *testing.T) {
 	if len(body.Jobs) != 2 {
 		t.Fatalf("jobs=%d", len(body.Jobs))
 	}
+	for _, job := range body.Jobs {
+		if job.ID == "a" {
+			if job.AttemptCount != 1 || len(job.Attempts) != 1 ||
+				job.Attempts[0].Number != 1 || job.Attempts[0].At != attemptedAt.Format(time.RFC3339Nano) ||
+				job.Attempts[0].Error != "split failed" {
+				t.Fatalf("attempt fields=%+v", job)
+			}
+			return
+		}
+	}
+	t.Fatal("job a missing")
 }
 
 func TestScanJobs_ReturnsAcceptedBeforeScanCompletes(t *testing.T) {
@@ -304,7 +326,7 @@ func TestPutSettings_AppliesRuntimeConfig(t *testing.T) {
 		},
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(
-		`{"watch_dirs":["/new/watch"],"out_dir":"/new/out","in_place":true,"engine":"native"}`,
+		`{"watch_dirs":["/new/watch"],"out_dir":"/new/out","in_place":true,"engine":"native","max_retries":4}`,
 	))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", testAPIKey)
@@ -314,7 +336,7 @@ func TestPutSettings_AppliesRuntimeConfig(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	if applied.Engine != "native" || applied.OutDir != "/new/out" || !applied.InPlace ||
-		len(applied.WatchDirs) != 1 || applied.WatchDirs[0] != "/new/watch" {
+		len(applied.WatchDirs) != 1 || applied.WatchDirs[0] != "/new/watch" || applied.MaxRetries != 4 {
 		t.Fatalf("applied=%+v", applied)
 	}
 }

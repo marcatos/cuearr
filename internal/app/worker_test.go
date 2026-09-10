@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -77,4 +78,47 @@ func TestWorker_ClaimProcessesQueuedJob(t *testing.T) {
 	cancel()
 	<-done
 	t.Fatal("job did not complete")
+}
+
+func TestWorker_FailedJobStopsAfterConfiguredTotalAttempts(t *testing.T) {
+	cuePath := writeCue(t, oneTrackCue)
+	job := domain.Job{
+		ID: "job-retry", Fingerprint: "fp-retry", Status: domain.JobQueued,
+		CuePath: cuePath, ImagePath: "/a.flac", CreatedAt: time.Now().UTC(),
+	}
+	store := &fakeJobStore{byFP: map[string]domain.Job{job.Fingerprint: job}}
+	splitter := &fakeSplitter{err: errors.New("split failed")}
+	runtime := app.NewRuntimeConfig(domain.Settings{MaxRetries: 3}, splitter)
+	worker := &app.Worker{
+		Store: store, Runtime: runtime, OutDir: t.TempDir(), Interval: 10 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- worker.Run(ctx) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := store.Get(context.Background(), job.ID)
+		if err == nil && got.Status == domain.JobFailed && got.AttemptCount == 3 {
+			cancel()
+			<-done
+			if len(splitter.outDirs) != 3 {
+				t.Fatalf("splitter calls=%d want 3", len(splitter.outDirs))
+			}
+			if len(got.AttemptLog) != 3 {
+				t.Fatalf("attempt log=%+v", got.AttemptLog)
+			}
+			for i, attempt := range got.AttemptLog {
+				if attempt.Number != i+1 || attempt.At.IsZero() || attempt.Error != "split failed" {
+					t.Fatalf("attempt[%d]=%+v", i, attempt)
+				}
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	t.Fatal("job did not reach permanent failure")
 }
