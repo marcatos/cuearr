@@ -18,11 +18,11 @@
 
 ## Status
 
-**v0.3.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.3.0), container [`ghcr.io/marcatos/cuearr:v0.3.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). Ships B1–B3 (verified splits, file reliability, assisted beta UI/docs). See [releasing](docs/releasing.md).
+**v0.4.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). Ships B1–B3 plus B6 positioning docs. See [releasing](docs/releasing.md).
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Positioning:** **B6 is complete** with a documented [comparison against Unpackerr, Splittarr, and Flacon](docs/competitive-comparison.md). **B1**–**B3** shipped through v0.3.0 ([file reliability](docs/file-reliability.md), [beta](docs/beta.md)); B6 is a documentation milestone completed after that release.
+**Positioning:** **B6 is complete** with a documented [comparison against Unpackerr, Splittarr, and Flacon](docs/competitive-comparison.md). **B1**–**B3** shipped through v0.3.0 ([file reliability](docs/file-reliability.md), [beta](docs/beta.md)); B6 docs land in v0.4.0.
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
