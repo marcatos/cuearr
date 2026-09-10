@@ -18,7 +18,7 @@ FILE "album.flac" WAVE
     INDEX 01 00:00:00
   TRACK 02 AUDIO
     TITLE "Track Two"
-    INDEX 01 00:00:03
+    INDEX 01 00:03:00
 '@ | Set-Content -Path $cuePath -Encoding utf8NoBOM
 
 if (Test-Path $flacPath) {
@@ -26,13 +26,27 @@ if (Test-Path $flacPath) {
     exit 0
 }
 
+$sox = Get-Command sox -ErrorAction SilentlyContinue
+$flac = Get-Command flac -ErrorAction SilentlyContinue
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-if ($ffmpeg) {
-    & ffmpeg -hide_banner -loglevel error -y `
-        -f lavfi -i "anullsrc=r=44100:cl=2" -t 6 `
-        -c:a flac $flacPath
+$wavPath = Join-Path $OutDir "album.wav"
+
+if ($sox -and $flac) {
+    & sox -n -r 44100 -c 2 -b 16 $wavPath trim 0 6
+    & flac -f -o $flacPath $wavPath
+    Remove-Item -Force $wavPath -ErrorAction SilentlyContinue
     Write-Host "Wrote $cuePath and $flacPath"
     exit 0
 }
 
-Write-Error "generate_fixture: install ffmpeg to create $flacPath (or run scripts/generate_fixture.sh on Linux/macOS with sox+flac)"
+if ($ffmpeg -and $flac) {
+    & ffmpeg -hide_banner -loglevel error -y `
+        -f lavfi -i "anullsrc=r=44100:cl=2" -t 6 `
+        -c:a pcm_s16le $wavPath
+    & flac -f -o $flacPath $wavPath
+    Remove-Item -Force $wavPath -ErrorAction SilentlyContinue
+    Write-Host "Wrote $cuePath and $flacPath"
+    exit 0
+}
+
+Write-Error "generate_fixture: install sox+flac or ffmpeg+flac to create $flacPath"

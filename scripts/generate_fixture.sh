@@ -18,7 +18,7 @@ FILE "album.flac" WAVE
     INDEX 01 00:00:00
   TRACK 02 AUDIO
     TITLE "Track Two"
-    INDEX 01 00:00:03
+    INDEX 01 00:03:00
 EOF
 
 if [[ -f "$FLAC" ]]; then
@@ -26,17 +26,28 @@ if [[ -f "$FLAC" ]]; then
   exit 0
 fi
 
-if command -v ffmpeg >/dev/null 2>&1; then
+generate_via_sox_flac() {
+  local wav="${OUT}/album.wav"
+  sox -n -r 44100 -c 2 -b 16 "$wav" trim 0 6
+  flac -f -o "$FLAC" "$wav"
+  rm -f "$wav"
+}
+
+generate_via_ffmpeg_pcm_flac() {
+  local wav="${OUT}/album.wav"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i anullsrc=r=44100:cl=2 -t 6 \
-    -c:a flac "$FLAC"
-elif command -v sox >/dev/null 2>&1 && command -v flac >/dev/null 2>&1; then
-  WAV="${OUT}/album.wav"
-  sox -n -r 44100 -c 2 -b 16 "$WAV" trim 0 6
-  flac -f -o "$FLAC" "$WAV"
-  rm -f "$WAV"
+    -c:a pcm_s16le "$wav"
+  flac -f -o "$FLAC" "$wav"
+  rm -f "$wav"
+}
+
+if command -v sox >/dev/null 2>&1 && command -v flac >/dev/null 2>&1; then
+  generate_via_sox_flac
+elif command -v ffmpeg >/dev/null 2>&1 && command -v flac >/dev/null 2>&1; then
+  generate_via_ffmpeg_pcm_flac
 else
-  echo "generate_fixture: need ffmpeg or (sox + flac) to create $FLAC" >&2
+  echo "generate_fixture: need (sox + flac) or (ffmpeg + flac) to create $FLAC" >&2
   exit 1
 fi
 

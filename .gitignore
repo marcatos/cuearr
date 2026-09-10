@@ -29,9 +29,12 @@ cuearr.db-*
 # Temp
 /tmp/
 *.log
+/testdata/e2e_album/
 
 .superpowers/
 
 # Agent / SDD scratch (never commit)
 task-*-report.md
 *-review-package.md
+
+.worktrees/

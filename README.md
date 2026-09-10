@@ -24,15 +24,17 @@
 
 **Active now:** **B1** prove the promise ([#15](https://github.com/marcatos/cuearr/issues/15)–[#18](https://github.com/marcatos/cuearr/issues/18), [#14](https://github.com/marcatos/cuearr/issues/14)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). Shipped earlier: atomic job claim, OIDC polish, async scan.
 
+**Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
+
 ## Why Cuearr exists
 
 Many music downloads still ship as **one big FLAC (or WAV/APE) + a `.cue` sheet**. That layout is fine for archival players. It is a poor fit for the *arr + Plex stack:
 
-| Without Cuearr | With Cuearr |
-|----------------|-------------|
-| Lidarr often sees a single “track” or fails quality/match expectations | Per-track files Lidarr can import |
-| Plex Music shows one file, weak track browsing | Normal album → track library |
-| Manual `shntool` / Flacon every time | Watch folder + Lidarr webhook, unattended |
+| Without Cuearr | With Cuearr (goal) |
+|----------------|---------------------|
+| Lidarr often sees a single “track” or fails quality/match expectations | Per-track FLACs under `out_dir` ([verified split cases](docs/compatibility-matrix.md)) |
+| Plex Music shows one file, weak track browsing | Intended: per-track library after Lidarr import ([Plex not verified in CI](docs/lidarr-plex-demo.md#plex-music)) |
+| Manual `shntool` / Flacon every time | Watch folder + Lidarr webhook/script ([demo path](docs/lidarr-plex-demo.md)) |
 
 Cuearr focuses on **verified** splits and a clear Lidarr-oriented path (see strategy: compare vs Unpackerr / Splittarr / Flacon before expanding scope). Flow: watch (or hook) → split with **shntool** → drop ready tracks where Lidarr looks.
 
@@ -130,9 +132,9 @@ download client
 
 **Lidarr webhook:** Settings → Connect → Webhook  
 `POST http://<cuearr>:8787/api/v1/hooks/lidarr` with header `X-Api-Key: <key>`  
-Triggers: On Download / On Import. Path keys: see [Lidarr Connect](#lidarr-connect).
+Triggers: On Download / On Import. Full walkthrough: [Lidarr/Plex demo path](docs/lidarr-plex-demo.md). Path keys: [Lidarr Connect](#lidarr-connect).
 
-**Custom script:** [`scripts/lidarr-custom-script.sh`](scripts/lidarr-custom-script.sh) with `CUEARR_URL` + `CUEARR_API_KEY`.
+**Custom script:** [`scripts/lidarr-custom-script.sh`](scripts/lidarr-custom-script.sh) with `CUEARR_URL` + `CUEARR_API_KEY` (same endpoint as the webhook).
 
 Response: `{"job_id":"…","created":true|false}` (idempotent per album fingerprint).
 
