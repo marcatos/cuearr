@@ -40,6 +40,14 @@ func TestParseCue_QuotedFileNameWithSpaces(t *testing.T) {
 	}
 }
 
+func TestParseCue_RejectsMultipleFileDirectives(t *testing.T) {
+	data := []byte("FILE \"disc-1.flac\" WAVE\nFILE \"disc-2.flac\" WAVE\n")
+	_, err := ParseCue(data)
+	if !errors.Is(err, ErrMultiFileCue) {
+		t.Fatalf("got %v, want ErrMultiFileCue", err)
+	}
+}
+
 func TestBuildSplitPlan_FindsFlacBesideCue(t *testing.T) {
 	sheet := CueSheet{File: "album.flac", Tracks: []CueTrack{{Number: 1, Title: "A", Index01: "00:00:00"}}}
 	entries := []DirEntry{{Name: "album.flac"}, {Name: "album.cue"}}

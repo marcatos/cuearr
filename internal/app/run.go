@@ -50,6 +50,22 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		}
 	}
 
+	preflightStart := time.Now()
+	if r.Preflight == nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, ErrPreflightUnavailable, log)
+	}
+	if err := r.Preflight.Check(ctx, job.ImagePath, stagingBase); err != nil {
+		finished := running
+		finished.OutDir = finalOut
+		return r.failJob(ctx, finished, ports.SplitResult{}, err, log)
+	}
+	log.Info("run job preflight passed",
+		"job_id", job.ID,
+		"duration_ms", time.Since(preflightStart).Milliseconds(),
+	)
+
 	stagingStart := time.Now()
 	staging, err := PrepareStaging(stagingBase, job.ID)
 	if err != nil {

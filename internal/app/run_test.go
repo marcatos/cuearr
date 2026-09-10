@@ -20,6 +20,20 @@ type fakeSplitter struct {
 	outDirs []string
 }
 
+type fakePreflight struct {
+	err          error
+	calls        int
+	imagePath    string
+	outputParent string
+}
+
+func (f *fakePreflight) Check(_ context.Context, imagePath, outputParent string) error {
+	f.calls++
+	f.imagePath = imagePath
+	f.outputParent = outputParent
+	return f.err
+}
+
 func (f *fakeSplitter) Name() string { return "fake" }
 
 func (f *fakeSplitter) Available(context.Context) error { return nil }
@@ -45,6 +59,38 @@ func (f *fakeSplitter) Split(_ context.Context, _ domain.SplitPlan, outDir strin
 }
 
 var _ ports.Splitter = (*fakeSplitter)(nil)
+var _ ports.JobPreflight = (*fakePreflight)(nil)
+
+func TestRunJob_PreflightFailurePreventsSplit(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeJobStore{}
+	job := domain.Job{
+		ID: "job-preflight", Fingerprint: "fp-preflight",
+		CuePath: "/album/album.cue", ImagePath: "/album/album.flac",
+		Status: domain.JobQueued,
+	}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	splitter := &fakeSplitter{}
+	preflight := &fakePreflight{err: app.ErrImageUnstable}
+	runner := app.JobRunner{Store: store, Splitter: splitter, Preflight: preflight}
+	output := t.TempDir()
+
+	got, err := runner.RunJob(ctx, job, output, false)
+	if !errors.Is(err, app.ErrImageUnstable) {
+		t.Fatalf("got %v, want ErrImageUnstable", err)
+	}
+	if got.Status != domain.JobFailed {
+		t.Fatalf("status=%q, want failed", got.Status)
+	}
+	if preflight.calls != 1 {
+		t.Fatalf("preflight calls=%d, want 1", preflight.calls)
+	}
+	if len(splitter.outDirs) != 0 {
+		t.Fatalf("split called with %v", splitter.outDirs)
+	}
+}
 
 func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	ctx := context.Background()
@@ -85,7 +131,7 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	tagger := &fakeFLACTagger{}
 	runner := app.JobRunner{
 		Store: store, Splitter: splitter, Inspector: inspector,
-		Tagger: tagger, ReadFile: os.ReadFile,
+		Tagger: tagger, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
 	}
 
 	baseOut := filepath.Join(root, "out")
@@ -151,7 +197,7 @@ func TestRunJob_InPlaceStagesBesideImageAndKeepsOriginals(t *testing.T) {
 			imagePath: {Duration: 3 * time.Second},
 			"01.flac": {Duration: 3 * time.Second},
 		}},
-		Tagger: &fakeFLACTagger{}, ReadFile: os.ReadFile,
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
 	}
 
 	got, err := runner.RunJob(ctx, job, filepath.Join(t.TempDir(), "unused"), true)
@@ -190,7 +236,7 @@ func TestRunJob_SplitErrorMarksFailed(t *testing.T) {
 	}
 
 	splitter := &fakeSplitter{err: errors.New("split blew up")}
-	runner := app.JobRunner{Store: store, Splitter: splitter}
+	runner := app.JobRunner{Store: store, Splitter: splitter, Preflight: &fakePreflight{}}
 
 	got, err := runner.RunJob(ctx, job, t.TempDir(), false)
 	if err == nil {
@@ -220,7 +266,7 @@ func TestRunJob_UsesDistinctPerAlbumOutputDirectories(t *testing.T) {
 	}}
 	runner := app.JobRunner{
 		Store: store, Splitter: splitter, Inspector: inspector,
-		Tagger: &fakeFLACTagger{}, ReadFile: os.ReadFile,
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
 	}
 	baseOut := t.TempDir()
 	for _, job := range jobs {
@@ -257,7 +303,7 @@ func TestRunJob_EmptySplitOutputMarksFailed(t *testing.T) {
 		Inspector: &fakeFLACInspector{info: map[string]ports.FLACInfo{
 			job.ImagePath: {Duration: 3 * time.Second},
 		}},
-		Tagger: &fakeFLACTagger{}, ReadFile: os.ReadFile,
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
 	}
 
 	baseOut := t.TempDir()
@@ -327,6 +373,7 @@ func TestRunJob_VerificationFailureMarksFailed(t *testing.T) {
 				Splitter:  &fakeSplitter{result: ports.SplitResult{OutputFiles: tc.outputs}},
 				Inspector: &fakeFLACInspector{info: info},
 				Tagger:    &fakeFLACTagger{err: tc.tagErr},
+				Preflight: &fakePreflight{},
 				ReadFile:  os.ReadFile,
 			}
 

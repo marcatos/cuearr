@@ -29,7 +29,10 @@ func DetectAlbum(
 		return domain.SplitPlan{}, err
 	}
 
-	cueName := pickCueFile(entries)
+	cueName, err := pickSingleCueFile(entries)
+	if err != nil {
+		return domain.SplitPlan{}, err
+	}
 	if cueName == "" {
 		return domain.SplitPlan{}, domain.ErrImageNotFound
 	}
@@ -91,11 +94,15 @@ func imageIdentity(imagePath string, statFile func(string) (domain.FileStat, err
 	}, nil
 }
 
-func pickCueFile(entries []domain.DirEntry) string {
+func pickSingleCueFile(entries []domain.DirEntry) (string, error) {
+	var cueName string
 	for _, e := range entries {
 		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {
-			return e.Name
+			if cueName != "" {
+				return "", domain.ErrAmbiguousCue
+			}
+			cueName = e.Name
 		}
 	}
-	return ""
+	return cueName, nil
 }

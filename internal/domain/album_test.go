@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -80,5 +81,18 @@ func TestBuildSplitPlan_FindsCuePath(t *testing.T) {
 	}
 	if !strings.HasSuffix(plan.CuePath, filepath.Join("album", "album.cue")) {
 		t.Fatalf("cuePath=%q", plan.CuePath)
+	}
+}
+
+func TestBuildSplitPlan_RejectsMultipleCueFiles(t *testing.T) {
+	sheet := CueSheet{File: "album.flac"}
+	entries := []DirEntry{
+		{Name: "album.flac"},
+		{Name: "disc-1.cue"},
+		{Name: "disc-2.CUE"},
+	}
+	_, err := BuildSplitPlan("/music/album", sheet, entries)
+	if !errors.Is(err, ErrAmbiguousCue) {
+		t.Fatalf("got %v, want ErrAmbiguousCue", err)
 	}
 }

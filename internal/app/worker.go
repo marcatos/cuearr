@@ -15,6 +15,7 @@ type Worker struct {
 	Splitter  ports.Splitter
 	Inspector ports.FLACInspector
 	Tagger    ports.FLACTagger
+	Preflight ports.JobPreflight
 	ReadFile  func(string) ([]byte, error)
 	Runtime   *RuntimeConfig
 	OutDir    string
@@ -86,7 +87,7 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 	runner := JobRunner{
 		Store: w.Store, Splitter: splitter, Inspector: w.Inspector,
-		Tagger: w.Tagger, ReadFile: w.ReadFile, Log: log,
+		Tagger: w.Tagger, Preflight: w.Preflight, ReadFile: w.ReadFile, Log: log,
 	}
 	finished, runErr := runner.RunJob(ctx, job, outDir, inPlace)
 	totalMs := time.Since(start).Milliseconds()

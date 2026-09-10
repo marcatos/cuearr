@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,5 +66,28 @@ func TestDetectAlbum_BasicCueAndFlac(t *testing.T) {
 	})
 	if plan.Fingerprint != wantFP {
 		t.Fatalf("fingerprint=%q want=%q", plan.Fingerprint, wantFP)
+	}
+}
+
+func TestDetectAlbum_RejectsMultipleCueFilesBeforeReading(t *testing.T) {
+	readCalled := false
+	listDir := func(string) ([]domain.DirEntry, error) {
+		return []domain.DirEntry{
+			{Name: "disc-1.cue"},
+			{Name: "disc-2.cue"},
+			{Name: "album.flac"},
+		}, nil
+	}
+	readFile := func(string) ([]byte, error) {
+		readCalled = true
+		return nil, nil
+	}
+
+	_, err := app.DetectAlbum("/music/album", readFile, listDir, nil, nil)
+	if !errors.Is(err, domain.ErrAmbiguousCue) {
+		t.Fatalf("got %v, want ErrAmbiguousCue", err)
+	}
+	if readCalled {
+		t.Fatal("readFile called for ambiguous directory")
 	}
 }

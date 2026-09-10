@@ -146,10 +146,12 @@ func runServe() error {
 	var wg sync.WaitGroup
 
 	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
+	preflight := app.Preflight{Probe: fsadapter.NewFileSafetyProbe(), Log: log}
 	worker := &app.Worker{
 		Store:     store,
 		Inspector: audioMetadata,
 		Tagger:    audioMetadata,
+		Preflight: preflight,
 		ReadFile:  os.ReadFile,
 		Runtime:   runtimeCfg,
 		Log:       log,

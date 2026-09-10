@@ -55,6 +55,11 @@ func Fingerprint(cuePath, imagePath string, cueBytes []byte, img ImageIdentity) 
 }
 
 func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, error) {
+	cueName, err := pickSingleCueFile(entries)
+	if err != nil {
+		return SplitPlan{}, err
+	}
+
 	imageName := sheet.File
 	if imageName == "" {
 		imageName = pickSingleAudio(entries)
@@ -63,7 +68,6 @@ func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, 
 		return SplitPlan{}, ErrImageNotFound
 	}
 
-	cueName := pickCueFile(entries)
 	cuePath := ""
 	if cueName != "" {
 		cuePath = filepath.Join(dir, cueName)
@@ -78,13 +82,17 @@ func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, 
 	return plan, nil
 }
 
-func pickCueFile(entries []DirEntry) string {
+func pickSingleCueFile(entries []DirEntry) (string, error) {
+	var cueName string
 	for _, e := range entries {
 		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {
-			return e.Name
+			if cueName != "" {
+				return "", ErrAmbiguousCue
+			}
+			cueName = e.Name
 		}
 	}
-	return ""
+	return cueName, nil
 }
 
 func entryExists(entries []DirEntry, name string) bool {

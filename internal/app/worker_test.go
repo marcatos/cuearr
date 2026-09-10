@@ -53,10 +53,11 @@ func TestWorker_ClaimProcessesQueuedJob(t *testing.T) {
 			imagePath:  {Duration: 3 * time.Second},
 			outputPath: {Duration: 3 * time.Second},
 		}},
-		Tagger:   &fakeFLACTagger{},
-		ReadFile: os.ReadFile,
-		OutDir:   t.TempDir(),
-		Interval: 20 * time.Millisecond,
+		Tagger:    &fakeFLACTagger{},
+		Preflight: &fakePreflight{},
+		ReadFile:  os.ReadFile,
+		OutDir:    t.TempDir(),
+		Interval:  20 * time.Millisecond,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -90,7 +91,8 @@ func TestWorker_FailedJobStopsAfterConfiguredTotalAttempts(t *testing.T) {
 	splitter := &fakeSplitter{err: errors.New("split failed")}
 	runtime := app.NewRuntimeConfig(domain.Settings{MaxRetries: 3}, splitter)
 	worker := &app.Worker{
-		Store: store, Runtime: runtime, OutDir: t.TempDir(), Interval: 10 * time.Millisecond,
+		Store: store, Runtime: runtime, Preflight: &fakePreflight{},
+		OutDir: t.TempDir(), Interval: 10 * time.Millisecond,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
