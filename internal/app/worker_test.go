@@ -162,6 +162,9 @@ func TestWorker_ManualRequeueAfterExhaustionRunsAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if requeued.AttemptCount != 0 {
+		t.Fatalf("manual requeue attempt count=%d, want 0", requeued.AttemptCount)
+	}
 	store := &fakeJobStore{byFP: map[string]domain.Job{requeued.Fingerprint: requeued}}
 	observed := make(chan int, 1)
 	splitter := &attemptObservingSplitter{store: store, jobID: failed.ID, observed: observed}
