@@ -22,7 +22,7 @@
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Active now:** **B1** prove the promise ([#15](https://github.com/marcatos/cuearr/issues/15)–[#18](https://github.com/marcatos/cuearr/issues/18), [#14](https://github.com/marcatos/cuearr/issues/14)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). Shipped earlier: atomic job claim, OIDC polish, async scan.
+**Active now:** **B2** file reliability ([#19](https://github.com/marcatos/cuearr/issues/19)–[#22](https://github.com/marcatos/cuearr/issues/22), [overview](docs/file-reliability.md)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). **B1** prove-the-promise is complete.
 
 **Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
 
