@@ -14,9 +14,11 @@ jobs:
       - name: Install audio tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y shntool cuetools flac ffmpeg
+          sudo apt-get install -y shntool cuetools flac sox ffmpeg
       - name: Generate synthetic split fixture
-        run: bash scripts/generate_fixture.sh
+        run: |
+          rm -rf testdata/e2e_album
+          bash scripts/generate_fixture.sh
       - name: Test
         run: go test ./...
         env:
