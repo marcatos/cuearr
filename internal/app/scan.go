@@ -3,9 +3,23 @@ package app
 import (
 	"context"
 
+	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
 	"github.com/marcatos/cuearr/internal/domain"
 	"github.com/marcatos/cuearr/internal/ports"
 )
+
+func ScanAll(watchDirs []string, maxDepth int, onDir func(dir string) error) error {
+	dirs, err := fsadapter.WalkCueDirs(watchDirs, maxDepth)
+	if err != nil {
+		return err
+	}
+	for _, dir := range dirs {
+		if err := onDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func ScanDir(
 	ctx context.Context,
