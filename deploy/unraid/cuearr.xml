@@ -9,11 +9,11 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/marcatos/cuearr/issues</Support>
   <Project>https://github.com/marcatos/cuearr</Project>
-  <Overview>*arr-style daemon that splits lossless image + CUE albums into per-track files for Lidarr and Plex.</Overview>
-  <Category>MediaApp:Music</Category>
+  <Overview>Cuearr watches image+CUE albums (or Lidarr webhooks), splits them with shntool into per-track files, and drops them where Lidarr/Plex can import. Homelab *arr companion — password/API key/OIDC, SQLite queue, port 8787.</Overview>
+  <Category>MediaApp:Music Tools:</Category>
   <WebUI>http://[IP]:[PORT:8787]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/marcatos/cuearr/main/deploy/unraid/cuearr.xml</TemplateURL>
-  <Icon/>
+  <Icon>https://raw.githubusercontent.com/marcatos/cuearr/main/docs/branding/cuearr-icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <Config Name="Web UI" Target="8787" Default="8787" Mode="tcp" Description="Cuearr HTTP UI and API" Type="Port" Display="always" Required="true" Mask="false">8787</Config>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Cuearr">
+  <defs>
+    <style>
+      .bg { fill: #0B3D4A; }
+      .disc { fill: #145A6A; }
+      .cut { fill: #3ECFB2; }
+      .cue { fill: #E8A54B; }
+    </style>
+  </defs>
+  <rect class="bg" width="128" height="128" rx="28"/>
+  <!-- album image block -->
+  <rect class="disc" x="28" y="30" width="72" height="68" rx="6"/>
+  <!-- track split cuts -->
+  <rect class="cut" x="46" y="30" width="5" height="68"/>
+  <rect class="cut" x="62" y="30" width="5" height="68"/>
+  <rect class="cut" x="78" y="30" width="5" height="68"/>
+  <!-- cue sheet fold / tick -->
+  <path class="cue" d="M88 30 L100 30 L100 42 Z"/>
+</svg>

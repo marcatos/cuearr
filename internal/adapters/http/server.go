@@ -75,4 +75,5 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /login/{$}", static)
 	s.mux.Handle("GET /app.js", static)
 	s.mux.Handle("GET /styles.css", static)
+	s.mux.Handle("GET /favicon.svg", static)
 }

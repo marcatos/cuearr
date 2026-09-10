@@ -4,9 +4,9 @@
   --border: #2d3a4d;
   --text: #e7ecf3;
   --muted: #8b9bb4;
-  --accent: #3d8bfd;
+  --accent: #3ECFB2;
   --ok: #3dd68c;
-  --warn: #f5a524;
+  --warn: #E8A54B;
   --err: #f87171;
   --mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,9 +43,17 @@ a:hover {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--text);
+}
+
+.brand img {
+  display: block;
+  border-radius: 6px;
 }
 
 .nav {

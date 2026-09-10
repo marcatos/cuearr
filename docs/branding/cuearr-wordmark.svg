@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" role="img" aria-label="Cuearr">
+  <defs>
+    <style>
+      .bg { fill: none; }
+      .mark-bg { fill: #0B3D4A; }
+      .disc { fill: #145A6A; }
+      .cut { fill: #3ECFB2; }
+      .cue { fill: #E8A54B; }
+      .word { fill: #0B3D4A; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 92px; font-weight: 700; letter-spacing: -1.5px; }
+      .arr { fill: #3ECFB2; }
+    </style>
+  </defs>
+  <!-- mark -->
+  <rect class="mark-bg" x="8" y="16" width="128" height="128" rx="28"/>
+  <rect class="disc" x="36" y="46" width="72" height="68" rx="6"/>
+  <rect class="cut" x="54" y="46" width="5" height="68"/>
+  <rect class="cut" x="70" y="46" width="5" height="68"/>
+  <rect class="cut" x="86" y="46" width="5" height="68"/>
+  <path class="cue" d="M96 46 L108 46 L108 58 Z"/>
+  <!-- wordmark -->
+  <text class="word" x="160" y="108">Cue<tspan class="arr">arr</tspan></text>
+</svg>
