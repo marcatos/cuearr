@@ -33,15 +33,16 @@ exit 0
 
 - Album publication now assembles a hidden sibling directory and promotes it
   as a unit; an existing album is moved aside and restored if promotion fails.
-- Interrupted swaps restore the pre-existing album instead of deleting its
-  backup, and non-atomic merge publication is rejected.
+- Mid-publish failures discard only the publishing sibling, so pre-existing
+  final tracks are never deleted by rollback.
 - In-place runs publish to an adjacent fingerprinted album directory so source
   files remain untouched and consumers never observe a partial album.
-- The completed job state is persisted before final output is exposed. A
-  persistence failure records a failed job and removes staging.
-- Attempts are recorded before splitter work starts; crash-recovered jobs at
-  their configured limit are not run again.
+- After successful publish, a failed `Store.Update(completed)` quarantines the
+  album aside (`*.orphan-{jobID}`), marks the job failed, and returns an error.
+- Attempts are recorded at `RunJob` start via `BeginAttempt`; crash-recovered
+  jobs already at their configured limit are not run again.
 - Image SHA-256 hashing streams through `io.Copy` rather than loading the whole
   image into memory; the injectable hash hook remains supported.
 
-Commits: `8e9b9d4`, `9f3cea9`.
+Commits: `8e9b9d4`, `9f3cea9`, `f2729d1`.
+
