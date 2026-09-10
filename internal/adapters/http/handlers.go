@@ -418,14 +418,6 @@ func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	writeError(w, http.StatusNotImplemented, "lidarr hook not implemented")
-}
-
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
