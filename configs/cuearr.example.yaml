@@ -1,0 +1,7 @@
+http_addr: ":8787"
+data_dir: ./data
+watch_dirs: ["/music/incoming"]
+out_dir: "/music/ready"
+in_place: false
+engine: shntool
+log_level: info
