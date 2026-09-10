@@ -5,3 +5,12 @@ out_dir: "/music/ready"
 in_place: false
 engine: shntool
 log_level: info
+
+# OIDC (optional) is stored in the SQLite settings DB, not this file.
+# Seed on first boot via environment (or configure later via the settings API):
+#   CUEARR_OIDC_ENABLED=true
+#   CUEARR_OIDC_ISSUER=https://authentik.example/application/o/cuearr/
+#   CUEARR_OIDC_CLIENT_ID=...
+#   CUEARR_OIDC_CLIENT_SECRET=...
+#   CUEARR_OIDC_REDIRECT_URL=https://cuearr.example/api/v1/auth/oidc/callback
+#   CUEARR_OIDC_ALLOWED_EMAIL_DOMAINS=example.com,other.org

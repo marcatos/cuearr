@@ -56,6 +56,10 @@ func isPublicAPI(r *http.Request) bool {
 		return r.Method == http.MethodGet
 	case "/api/v1/login":
 		return true
+	case "/api/v1/auth/oidc/login":
+		return r.Method == http.MethodGet
+	case "/api/v1/auth/oidc/callback":
+		return r.Method == http.MethodGet
 	default:
 		return false
 	}

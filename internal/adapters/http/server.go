@@ -39,9 +39,25 @@ func (s *Server) Handler() http.Handler {
 	return mw.Wrap(s.mux)
 }
 
+func (s *Server) oidcHandler() *auth.OIDCHandler {
+	return auth.NewOIDCHandler(auth.OIDCHandlerConfig{
+		SessionSecret: s.deps.SessionSecret,
+		GetConfig: func(ctx context.Context) (auth.OIDCConfig, error) {
+			settings, err := s.deps.Settings.Get(ctx)
+			if err != nil {
+				return auth.OIDCConfig{}, err
+			}
+			return auth.OIDCConfigFromAuth(settings.Auth), nil
+		},
+	})
+}
+
 func (s *Server) routes() {
+	oidc := s.oidcHandler()
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/login", s.handleLogin)
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/login", oidc.HandleLogin)
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", oidc.HandleCallback)
 	s.mux.HandleFunc("PUT /api/v1/settings/auth", s.handlePutSettingsAuth)
 	s.mux.HandleFunc("GET /api/v1/jobs", s.handleListJobs)
 	s.mux.HandleFunc("POST /api/v1/jobs", s.handleCreateJob)
