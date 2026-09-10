@@ -10,8 +10,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/marcatos/cuearr/internal/adapters/audio/metaflac"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
+	"github.com/marcatos/cuearr/internal/app"
 	"github.com/marcatos/cuearr/internal/domain"
 )
 
@@ -45,47 +48,104 @@ func e2eAlbumDir(t *testing.T) string {
 	cue := filepath.Join(dir, "album.cue")
 	flac := filepath.Join(dir, "album.flac")
 	if _, err := os.Stat(cue); err != nil {
-		t.Skipf("fixture cue missing (%v); run scripts/generate_fixture.sh", err)
+		e2eUnavailable(t, "fixture cue missing (%v); run scripts/generate_fixture.sh", err)
 	}
 	if _, err := os.Stat(flac); err != nil {
-		t.Skipf("fixture flac missing (%v); run scripts/generate_fixture.sh or scripts/generate_fixture.ps1", err)
+		e2eUnavailable(t, "fixture flac missing (%v); run scripts/generate_fixture.sh or scripts/generate_fixture.ps1", err)
 	}
 	return dir
 }
 
-func TestE2E_SplitFixtureWithShntool(t *testing.T) {
-	if _, err := exec.LookPath("shntool"); err != nil {
-		t.Skip("shntool not in PATH")
+func e2eUnavailable(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CUEARR_REQUIRE_SHNTOOL") == "1" {
+		t.Fatalf(format, args...)
 	}
+	t.Skipf(format, args...)
+}
+
+func requireE2EExecutable(t *testing.T, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		e2eUnavailable(t, "%s not in PATH: %v", name, err)
+	}
+}
+
+func TestE2E_RunJobSplitsVerifiesAndTagsFixture(t *testing.T) {
+	requireE2EExecutable(t, "shntool")
+	requireE2EExecutable(t, "metaflac")
 	albumDir := e2eAlbumDir(t)
-	outDir := t.TempDir()
 
-	ctx := context.Background()
-	splitter := shntool.New(e2eExecRunner{}, "shntool")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	commandRunner := e2eExecRunner{}
+	splitter := shntool.New(commandRunner, "shntool")
 	if err := splitter.Available(ctx); err != nil {
-		t.Skipf("shntool not usable: %v", err)
+		e2eUnavailable(t, "shntool not usable: %v", err)
+	}
+	audio := metaflac.New(commandRunner, "metaflac")
+	store := &fakeJobStore{}
+	job := domain.Job{
+		ID:          "e2e-synthetic-album",
+		Fingerprint: "e2e-synthetic-album",
+		CuePath:     filepath.Join(albumDir, "album.cue"),
+		ImagePath:   filepath.Join(albumDir, "album.flac"),
+		Status:      domain.JobQueued,
+		Engine:      splitter.Name(),
+	}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatalf("create e2e job: %v", err)
+	}
+	runner := app.JobRunner{
+		Store: store, Splitter: splitter, Inspector: audio, Tagger: audio,
+	}
+	finished, err := runner.RunJob(ctx, job, t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("run job: %v (log=%q)", err, finished.Log)
+	}
+	if finished.Status != domain.JobCompleted {
+		t.Fatalf("job status=%q, want %q", finished.Status, domain.JobCompleted)
 	}
 
-	plan := domain.SplitPlan{
-		CuePath:   filepath.Join(albumDir, "album.cue"),
-		ImagePath: filepath.Join(albumDir, "album.flac"),
-		WorkDir:   albumDir,
-	}
-	result, err := splitter.Split(ctx, plan, outDir)
+	entries, err := os.ReadDir(finished.OutDir)
 	if err != nil {
-		t.Fatalf("split: %v (log=%q)", err, result.Log)
+		t.Fatalf("read job output: %v", err)
 	}
-	entries, err := os.ReadDir(outDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var flacs int
+	var tracks []string
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".flac") {
-			flacs++
+			tracks = append(tracks, filepath.Join(finished.OutDir, e.Name()))
 		}
 	}
-	if flacs < 2 {
-		t.Fatalf("expected at least 2 track flacs in %s, got %d (log=%q)", outDir, flacs, result.Log)
+	if len(tracks) != 2 {
+		t.Fatalf("expected exactly 2 track flacs in %s, got %d (log=%q)", finished.OutDir, len(tracks), finished.Log)
+	}
+
+	expectedTags := [][4]string{
+		{"TITLE=Track One", "ARTIST=Cuearr Test", "ALBUM=Fixture Album", "TRACKNUMBER=1"},
+		{"TITLE=Track Two", "ARTIST=Cuearr Test", "ALBUM=Fixture Album", "TRACKNUMBER=2"},
+	}
+	for i, track := range tracks {
+		info, inspectErr := audio.Inspect(ctx, track)
+		if inspectErr != nil {
+			t.Fatalf("inspect track %d: %v", i+1, inspectErr)
+		}
+		delta := info.Duration - 3*time.Second
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 100*time.Millisecond {
+			t.Errorf("track %d duration=%v, want 3s ±100ms", i+1, info.Duration)
+		}
+		for _, expected := range expectedTags[i] {
+			field := strings.SplitN(expected, "=", 2)[0]
+			stdout, stderr, exitCode, runErr := commandRunner.Run(ctx, "metaflac", "--show-tag="+field, track)
+			if runErr != nil || exitCode != 0 {
+				t.Fatalf("read %s tag from track %d: err=%v exit=%d stderr=%q", field, i+1, runErr, exitCode, stderr)
+			}
+			if got := strings.TrimSpace(stdout); got != expected {
+				t.Errorf("track %d %s tag=%q, want %q", i+1, field, got, expected)
+			}
+		}
 	}
 }

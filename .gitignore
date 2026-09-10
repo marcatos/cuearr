@@ -29,6 +29,7 @@ cuearr.db-*
 # Temp
 /tmp/
 *.log
+/testdata/e2e_album/
 
 .superpowers/
 
