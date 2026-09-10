@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -62,16 +63,16 @@ func (w *Worker) Run(ctx context.Context) error {
 
 func (w *Worker) runOnce(ctx context.Context) error {
 	start := time.Now()
-	job, ok, err := w.nextQueued(ctx)
+	job, err := w.Store.ClaimNextQueued(ctx, time.Now().UTC())
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return nil
-	}
 
 	log := w.logger()
-	log.Info("worker picked job", "job_id", job.ID)
+	log.Info("worker claimed job", "job_id", job.ID)
 
 	splitter, outDir, inPlace := w.Splitter, w.OutDir, w.InPlace
 	if w.Runtime != nil {
@@ -86,25 +87,4 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 	log.Info("worker job finished", "job_id", job.ID, "total_ms", totalMs)
 	return nil
-}
-
-func (w *Worker) nextQueued(ctx context.Context) (domain.Job, bool, error) {
-	jobs, err := w.Store.List(ctx, 200)
-	if err != nil {
-		return domain.Job{}, false, err
-	}
-	var (
-		found domain.Job
-		ok    bool
-	)
-	for _, j := range jobs {
-		if j.Status != domain.JobQueued {
-			continue
-		}
-		if !ok || j.CreatedAt.Before(found.CreatedAt) {
-			found = j
-			ok = true
-		}
-	}
-	return found, ok, nil
 }

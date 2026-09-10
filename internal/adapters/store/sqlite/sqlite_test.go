@@ -183,3 +183,44 @@ func TestSettingsStore_putGet(t *testing.T) {
 		t.Fatalf("settings: %+v", got)
 	}
 }
+
+func TestJobStore_ClaimNextQueued_AtomicOldest(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	older := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	_, err := store.Create(ctx, domain.Job{
+		ID: "q1", Fingerprint: "fp1", CuePath: "/a.cue", ImagePath: "/a.flac",
+		Status: domain.JobQueued, Engine: "shntool", CreatedAt: older,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Create(ctx, domain.Job{
+		ID: "q2", Fingerprint: "fp2", CuePath: "/b.cue", ImagePath: "/b.flac",
+		Status: domain.JobQueued, Engine: "shntool", CreatedAt: newer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	started := newer.Add(time.Minute)
+	first, err := store.ClaimNextQueued(ctx, started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != "q1" || first.Status != domain.JobRunning {
+		t.Fatalf("first claim=%+v", first)
+	}
+	second, err := store.ClaimNextQueued(ctx, started.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != "q2" {
+		t.Fatalf("second claim id=%s", second.ID)
+	}
+	_, err = store.ClaimNextQueued(ctx, started)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("empty queue err=%v", err)
+	}
+}

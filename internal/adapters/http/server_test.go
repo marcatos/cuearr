@@ -61,6 +61,29 @@ func (m *memJobStore) FindByFingerprint(_ context.Context, fp string) (domain.Jo
 	return domain.Job{}, domain.ErrNotFound
 }
 
+func (m *memJobStore) ClaimNextQueued(_ context.Context, startedAt time.Time) (domain.Job, error) {
+	var (
+		found domain.Job
+		ok    bool
+	)
+	for _, j := range m.jobs {
+		if j.Status != domain.JobQueued {
+			continue
+		}
+		if !ok || j.CreatedAt.Before(found.CreatedAt) {
+			found = j
+			ok = true
+		}
+	}
+	if !ok {
+		return domain.Job{}, domain.ErrNotFound
+	}
+	found.Status = domain.JobRunning
+	found.StartedAt = startedAt
+	m.jobs[found.ID] = found
+	return found, nil
+}
+
 var _ ports.JobStore = (*memJobStore)(nil)
 
 type memSettingsStore struct {
@@ -211,6 +234,58 @@ func TestListJobs(t *testing.T) {
 	}
 	if len(body.Jobs) != 2 {
 		t.Fatalf("jobs=%d", len(body.Jobs))
+	}
+}
+
+func TestScanJobs_ReturnsAcceptedBeforeScanCompletes(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	settings := &memSettingsStore{
+		s: domain.Settings{Auth: domain.AuthSettings{APIKey: testAPIKey}},
+	}
+	srv := httpapi.New(httpapi.Deps{
+		Jobs:          &memJobStore{},
+		Settings:      settings,
+		SessionSecret: []byte("test-session-secret"),
+		WatchDirs:     []string{"/watch"},
+		ScanWatch: func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		},
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer close(release)
+
+	done := make(chan *http.Response, 1)
+	go func() {
+		res, err := apiPost(ts.URL+"/api/v1/jobs/scan", "application/json", bytes.NewReader(nil))
+		if err != nil {
+			t.Error(err)
+			done <- nil
+			return
+		}
+		done <- res
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scan did not start")
+	}
+
+	select {
+	case res := <-done:
+		if res == nil {
+			t.Fatal("request failed")
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusAccepted {
+			t.Fatalf("status=%d", res.StatusCode)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler blocked on scan")
 	}
 }
 

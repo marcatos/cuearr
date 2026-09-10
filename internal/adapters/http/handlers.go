@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -284,10 +285,14 @@ func (s *Server) handleScanJobs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no watch_dirs configured")
 		return
 	}
-	if err := s.deps.ScanWatch(r.Context()); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	scan := s.deps.ScanWatch
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		if err := scan(ctx); err != nil {
+			slog.Error("background watch scan failed", "error", err.Error())
+		}
+	}()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "scan started"})
 }
 

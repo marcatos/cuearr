@@ -25,10 +25,17 @@ func RunJob(ctx context.Context, store ports.JobStore, splitter ports.Splitter, 
 	}
 
 	running := job
-	running.Status = domain.JobRunning
-	running.StartedAt = time.Now().UTC()
-	if err := store.Update(ctx, running); err != nil {
-		return job, err
+	if running.Status != domain.JobRunning {
+		running.Status = domain.JobRunning
+		running.StartedAt = time.Now().UTC()
+		if err := store.Update(ctx, running); err != nil {
+			return job, err
+		}
+	} else if running.StartedAt.IsZero() {
+		running.StartedAt = time.Now().UTC()
+		if err := store.Update(ctx, running); err != nil {
+			return job, err
+		}
 	}
 
 	plan := domain.SplitPlan{

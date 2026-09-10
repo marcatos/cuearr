@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -45,6 +46,17 @@ func OIDCConfigFromAuth(a domain.AuthSettings) OIDCConfig {
 
 func (c OIDCConfig) ready() bool {
 	return c.Enabled && c.Issuer != "" && c.ClientID != "" && c.ClientSecret != "" && c.RedirectURL != ""
+}
+
+// oidcAvailability separates "turned off" from "enabled but incomplete".
+func (c OIDCConfig) availability() (ok bool, status int, msg string) {
+	if !c.Enabled {
+		return false, http.StatusNotFound, "oidc disabled"
+	}
+	if c.Issuer == "" || c.ClientID == "" || c.ClientSecret == "" || c.RedirectURL == "" {
+		return false, http.StatusServiceUnavailable, "oidc misconfigured"
+	}
+	return true, 0, ""
 }
 
 // EmailDomainAllowed reports whether email is permitted by allowed (empty = any domain).
@@ -84,6 +96,10 @@ type OIDCHandler struct {
 	cookieSecure  bool
 	getConfig     func(context.Context) (OIDCConfig, error)
 	discover      OIDCProviderDiscoverer
+
+	mu            sync.Mutex
+	cachedIssuer  string
+	cachedProvider *oidc.Provider
 }
 
 // OIDCHandlerConfig configures OIDCHandler.
@@ -126,8 +142,8 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		writeOIDCJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if !cfg.ready() {
-		writeOIDCJSONError(w, http.StatusNotFound, "oidc disabled")
+	if ok, status, msg := cfg.availability(); !ok {
+		writeOIDCJSONError(w, status, msg)
 		return
 	}
 	state, err := randomState()
@@ -166,8 +182,8 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		writeOIDCJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if !cfg.ready() {
-		writeOIDCJSONError(w, http.StatusNotFound, "oidc disabled")
+	if ok, status, msg := cfg.availability(); !ok {
+		writeOIDCJSONError(w, status, msg)
 		return
 	}
 	stateCookie, err := r.Cookie(oidcStateCookieName)
@@ -199,7 +215,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		writeOIDCJSONError(w, http.StatusBadRequest, "missing code")
 		return
 	}
-	oauthCfg, err := h.oauth2Config(r.Context(), cfg)
+	oauthCfg, provider, err := h.oauth2ConfigAndProvider(r.Context(), cfg)
 	if err != nil {
 		slog.Error("oidc callback: provider", "error", err.Error())
 		writeOIDCJSONError(w, http.StatusInternalServerError, "oidc provider error")
@@ -214,12 +230,6 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	rawID, ok := token.Extra("id_token").(string)
 	if !ok || rawID == "" {
 		writeOIDCJSONError(w, http.StatusUnauthorized, "missing id_token")
-		return
-	}
-	provider, err := h.discover(r.Context(), cfg.Issuer)
-	if err != nil {
-		slog.Error("oidc callback: discover", "error", err.Error())
-		writeOIDCJSONError(w, http.StatusInternalServerError, "oidc provider error")
 		return
 	}
 	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
@@ -257,10 +267,30 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (h *OIDCHandler) oauth2Config(ctx context.Context, cfg OIDCConfig) (*oauth2.Config, error) {
-	provider, err := h.discover(ctx, cfg.Issuer)
+func (h *OIDCHandler) provider(ctx context.Context, issuer string) (*oidc.Provider, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.cachedProvider != nil && h.cachedIssuer == issuer {
+		return h.cachedProvider, nil
+	}
+	provider, err := h.discover(ctx, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover issuer: %w", err)
+	}
+	h.cachedIssuer = issuer
+	h.cachedProvider = provider
+	return provider, nil
+}
+
+func (h *OIDCHandler) oauth2Config(ctx context.Context, cfg OIDCConfig) (*oauth2.Config, error) {
+	oauthCfg, _, err := h.oauth2ConfigAndProvider(ctx, cfg)
+	return oauthCfg, err
+}
+
+func (h *OIDCHandler) oauth2ConfigAndProvider(ctx context.Context, cfg OIDCConfig) (*oauth2.Config, *oidc.Provider, error) {
+	provider, err := h.provider(ctx, cfg.Issuer)
+	if err != nil {
+		return nil, nil, err
 	}
 	return &oauth2.Config{
 		ClientID:     cfg.ClientID,
@@ -268,7 +298,7 @@ func (h *OIDCHandler) oauth2Config(ctx context.Context, cfg OIDCConfig) (*oauth2
 		RedirectURL:  cfg.RedirectURL,
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
-	}, nil
+	}, provider, nil
 }
 
 func randomState() (string, error) {

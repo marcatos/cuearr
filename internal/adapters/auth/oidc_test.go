@@ -2,8 +2,11 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,6 +73,74 @@ func TestOIDCHandler_Login_Disabled(t *testing.T) {
 	h.HandleLogin(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOIDCHandler_Login_Misconfigured(t *testing.T) {
+	h := auth.NewOIDCHandler(auth.OIDCHandlerConfig{
+		SessionSecret: []byte("test-session-secret"),
+		SessionTTL:    time.Hour,
+		GetConfig: func(context.Context) (auth.OIDCConfig, error) {
+			return auth.OIDCConfig{Enabled: true, Issuer: "https://issuer.example"}, nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/login", nil)
+	rec := httptest.NewRecorder()
+	h.HandleLogin(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "oidc misconfigured") {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestOIDCHandler_Login_CachesProviderDiscovery(t *testing.T) {
+	var discoveries atomic.Int32
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		discoveries.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                                srv.URL,
+			"authorization_endpoint":                srv.URL + "/auth",
+			"token_endpoint":                        srv.URL + "/token",
+			"jwks_uri":                              srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	})
+
+	h := auth.NewOIDCHandler(auth.OIDCHandlerConfig{
+		SessionSecret: []byte("test-session-secret"),
+		SessionTTL:    time.Hour,
+		GetConfig: func(context.Context) (auth.OIDCConfig, error) {
+			return auth.OIDCConfig{
+				Enabled:      true,
+				Issuer:       srv.URL,
+				ClientID:     "client",
+				ClientSecret: "secret",
+				RedirectURL:  "http://localhost/callback",
+			}, nil
+		},
+		Discover: oidc.NewProvider,
+	})
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/login", nil)
+		rec := httptest.NewRecorder()
+		h.HandleLogin(rec, req)
+		if rec.Code != http.StatusFound {
+			t.Fatalf("login %d status=%d body=%s", i, rec.Code, rec.Body.String())
+		}
+	}
+	if got := discoveries.Load(); got != 1 {
+		t.Fatalf("discoveries=%d want 1", got)
 	}
 }
 

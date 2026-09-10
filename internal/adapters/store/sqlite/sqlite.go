@@ -124,6 +124,30 @@ WHERE id = ?`,
 	return nil
 }
 
+func (s *Store) ClaimNextQueued(ctx context.Context, startedAt time.Time) (domain.Job, error) {
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	row := s.db.QueryRowContext(ctx, `
+UPDATE jobs
+SET status = ?, started_at = ?, finished_at = NULL, error_text = ''
+WHERE id = (
+	SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1
+)
+RETURNING id, fingerprint, cue_path, image_path, out_dir, status, engine, log_text, error_text,
+	created_at, started_at, finished_at`,
+		domain.JobRunning, formatTime(startedAt), domain.JobQueued,
+	)
+	job, err := scanJobRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Job{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Job{}, fmt.Errorf("claim next queued: %w", err)
+	}
+	return job, nil
+}
+
 func (s *Store) RecoverRunning(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
 UPDATE jobs

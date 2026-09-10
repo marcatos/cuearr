@@ -262,6 +262,10 @@ func (m *memJobStore) FindByFingerprint(_ context.Context, _ string) (domain.Job
 	return domain.Job{}, domain.ErrNotFound
 }
 
+func (m *memJobStore) ClaimNextQueued(_ context.Context, _ time.Time) (domain.Job, error) {
+	return domain.Job{}, domain.ErrNotFound
+}
+
 type memSettingsStore struct {
 	s domain.Settings
 }

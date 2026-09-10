@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,9 +14,12 @@ import (
 
 type fakeJobStore struct {
 	byFP map[string]domain.Job
+	mu   sync.Mutex
 }
 
 func (f *fakeJobStore) Create(_ context.Context, job domain.Job) (domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.byFP == nil {
 		f.byFP = make(map[string]domain.Job)
 	}
@@ -24,6 +28,8 @@ func (f *fakeJobStore) Create(_ context.Context, job domain.Job) (domain.Job, er
 }
 
 func (f *fakeJobStore) Get(_ context.Context, id string) (domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, j := range f.byFP {
 		if j.ID == id {
 			return j, nil
@@ -33,6 +39,8 @@ func (f *fakeJobStore) Get(_ context.Context, id string) (domain.Job, error) {
 }
 
 func (f *fakeJobStore) List(_ context.Context, _ int) ([]domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := make([]domain.Job, 0, len(f.byFP))
 	for _, j := range f.byFP {
 		out = append(out, j)
@@ -41,6 +49,8 @@ func (f *fakeJobStore) List(_ context.Context, _ int) ([]domain.Job, error) {
 }
 
 func (f *fakeJobStore) Update(_ context.Context, job domain.Job) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if _, ok := f.byFP[job.Fingerprint]; !ok {
 		return domain.ErrNotFound
 	}
@@ -49,11 +59,38 @@ func (f *fakeJobStore) Update(_ context.Context, job domain.Job) error {
 }
 
 func (f *fakeJobStore) FindByFingerprint(_ context.Context, fp string) (domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	j, ok := f.byFP[fp]
 	if !ok {
 		return domain.Job{}, domain.ErrNotFound
 	}
 	return j, nil
+}
+
+func (f *fakeJobStore) ClaimNextQueued(_ context.Context, startedAt time.Time) (domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var (
+		found domain.Job
+		ok    bool
+	)
+	for _, j := range f.byFP {
+		if j.Status != domain.JobQueued {
+			continue
+		}
+		if !ok || j.CreatedAt.Before(found.CreatedAt) {
+			found = j
+			ok = true
+		}
+	}
+	if !ok {
+		return domain.Job{}, domain.ErrNotFound
+	}
+	found.Status = domain.JobRunning
+	found.StartedAt = startedAt
+	f.byFP[found.Fingerprint] = found
+	return found, nil
 }
 
 var _ ports.JobStore = (*fakeJobStore)(nil)
@@ -166,6 +203,10 @@ func (s *toctouJobStore) FindByFingerprint(_ context.Context, fp string) (domain
 	return domain.Job{}, domain.ErrNotFound
 }
 
+func (s *toctouJobStore) ClaimNextQueued(_ context.Context, _ time.Time) (domain.Job, error) {
+	return domain.Job{}, domain.ErrNotFound
+}
+
 var _ ports.JobStore = (*toctouJobStore)(nil)
 
 func TestEnqueue_IdempotentOnCreateFingerprintConflict(t *testing.T) {
@@ -232,6 +273,10 @@ func (conflictOnlyStore) Update(_ context.Context, _ domain.Job) error {
 }
 
 func (conflictOnlyStore) FindByFingerprint(_ context.Context, _ string) (domain.Job, error) {
+	return domain.Job{}, domain.ErrNotFound
+}
+
+func (conflictOnlyStore) ClaimNextQueued(_ context.Context, _ time.Time) (domain.Job, error) {
 	return domain.Job{}, domain.ErrNotFound
 }
 
