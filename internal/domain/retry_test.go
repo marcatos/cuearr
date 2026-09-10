@@ -9,7 +9,7 @@ import (
 
 func TestApplyAttemptFailure_RequeuesUntilMaxAttempts(t *testing.T) {
 	at := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
-	job := domain.Job{ID: "j1", Status: domain.JobFailed, Error: "split failed"}
+	job := domain.BeginAttempt(domain.Job{ID: "j1", Status: domain.JobQueued}, at)
 
 	first := domain.ApplyAttemptFailure(job, "split failed", at, 3)
 	if first.Status != domain.JobQueued || first.AttemptCount != 1 {
@@ -22,12 +22,14 @@ func TestApplyAttemptFailure_RequeuesUntilMaxAttempts(t *testing.T) {
 		t.Fatalf("attempt log=%+v", first.AttemptLog)
 	}
 
-	second := domain.ApplyAttemptFailure(first, "split failed again", at.Add(time.Minute), 3)
+	secondAttempt := domain.BeginAttempt(first, at.Add(time.Minute))
+	second := domain.ApplyAttemptFailure(secondAttempt, "split failed again", at.Add(time.Minute), 3)
 	if second.Status != domain.JobQueued || second.AttemptCount != 2 || len(second.AttemptLog) != 2 {
 		t.Fatalf("second=%+v", second)
 	}
 
-	third := domain.ApplyAttemptFailure(second, "final failure", at.Add(2*time.Minute), 3)
+	thirdAttempt := domain.BeginAttempt(second, at.Add(2*time.Minute))
+	third := domain.ApplyAttemptFailure(thirdAttempt, "final failure", at.Add(2*time.Minute), 3)
 	if third.Status != domain.JobFailed || third.AttemptCount != 3 {
 		t.Fatalf("third=%+v", third)
 	}
@@ -41,8 +43,16 @@ func TestApplyAttemptFailure_RequeuesUntilMaxAttempts(t *testing.T) {
 
 func TestApplyAttemptFailure_SingleAttemptWhenMaxIsOne(t *testing.T) {
 	at := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
-	job := domain.ApplyAttemptFailure(domain.Job{Status: domain.JobFailed}, "boom", at, 1)
+	job := domain.ApplyAttemptFailure(domain.BeginAttempt(domain.Job{Status: domain.JobQueued}, at), "boom", at, 1)
 	if job.Status != domain.JobFailed || job.AttemptCount != 1 {
+		t.Fatalf("job=%+v", job)
+	}
+}
+
+func TestBeginAttempt_IncrementsBeforeWork(t *testing.T) {
+	at := time.Date(2026, 9, 10, 15, 0, 0, 0, time.UTC)
+	job := domain.BeginAttempt(domain.Job{ID: "j1", Status: domain.JobQueued}, at)
+	if job.Status != domain.JobRunning || job.AttemptCount != 1 || !job.StartedAt.Equal(at) {
 		t.Fatalf("job=%+v", job)
 	}
 }

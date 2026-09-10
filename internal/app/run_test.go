@@ -27,6 +27,18 @@ type fakePreflight struct {
 	outputParent string
 }
 
+type failCompletedUpdateStore struct {
+	fakeJobStore
+	err error
+}
+
+func (s *failCompletedUpdateStore) Update(ctx context.Context, job domain.Job) error {
+	if job.Status == domain.JobCompleted {
+		return s.err
+	}
+	return s.fakeJobStore.Update(ctx, job)
+}
+
 func (f *fakePreflight) Check(_ context.Context, imagePath, outputParent string) error {
 	f.calls++
 	f.imagePath = imagePath
@@ -175,6 +187,48 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	}
 }
 
+func TestRunJob_CompletedPersistenceFailureDoesNotExposeAlbum(t *testing.T) {
+	ctx := context.Background()
+	store := &failCompletedUpdateStore{err: errors.New("database unavailable")}
+	root := t.TempDir()
+	job := domain.Job{
+		ID: "job-persist-fail", Fingerprint: "persist-fail",
+		CuePath: writeCue(t, oneTrackCue), ImagePath: filepath.Join(root, "album.flac"),
+		Status: domain.JobQueued,
+	}
+	if err := os.WriteFile(job.ImagePath, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	runner := app.JobRunner{
+		Store: store, Splitter: &fakeSplitter{result: ports.SplitResult{OutputFiles: []string{"01.flac"}}},
+		Inspector: &fakeFLACInspector{info: map[string]ports.FLACInfo{
+			job.ImagePath: {Duration: 3 * time.Second},
+			"01.flac":     {Duration: 3 * time.Second},
+		}},
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
+	}
+	baseOut := filepath.Join(root, "out")
+
+	got, err := runner.RunJob(ctx, job, baseOut, false)
+	if !errors.Is(err, store.err) {
+		t.Fatalf("err=%v, want persistence error", err)
+	}
+	finalOut := filepath.Join(baseOut, job.Fingerprint)
+	if _, statErr := os.Stat(finalOut); !os.IsNotExist(statErr) {
+		t.Fatalf("album exposed after completed update failed: %v", statErr)
+	}
+	stored, getErr := store.Get(ctx, job.ID)
+	if getErr != nil {
+		t.Fatal(getErr)
+	}
+	if stored.Status != domain.JobFailed {
+		t.Fatalf("stored status=%q, want failed; result=%+v", stored.Status, got)
+	}
+}
+
 func TestRunJob_InPlaceStagesBesideImageAndKeepsOriginals(t *testing.T) {
 	ctx := context.Background()
 	imageDir := t.TempDir()
@@ -208,10 +262,11 @@ func TestRunJob_InPlaceStagesBesideImageAndKeepsOriginals(t *testing.T) {
 	if len(splitter.outDirs) != 1 || splitter.outDirs[0] != staging {
 		t.Fatalf("split out dirs=%v, want [%q]", splitter.outDirs, staging)
 	}
-	if got.OutDir != imageDir {
-		t.Fatalf("out_dir=%q, want %q", got.OutDir, imageDir)
+	finalOut := filepath.Join(imageDir, job.Fingerprint)
+	if got.OutDir != finalOut {
+		t.Fatalf("out_dir=%q, want %q", got.OutDir, finalOut)
 	}
-	for _, path := range []string{imagePath, filepath.Join(imageDir, "01.flac")} {
+	for _, path := range []string{imagePath, filepath.Join(finalOut, "01.flac")} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected file %q: %v", path, err)
 		}

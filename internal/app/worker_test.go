@@ -17,6 +17,28 @@ type recoverableJobStore struct {
 	recoverCalls int
 }
 
+type attemptObservingSplitter struct {
+	store    *fakeJobStore
+	jobID    string
+	observed chan int
+}
+
+func (s *attemptObservingSplitter) Name() string { return "attempt-observer" }
+
+func (s *attemptObservingSplitter) Available(context.Context) error { return nil }
+
+func (s *attemptObservingSplitter) Split(ctx context.Context, _ domain.SplitPlan, _ string) (ports.SplitResult, error) {
+	job, err := s.store.Get(ctx, s.jobID)
+	if err != nil {
+		return ports.SplitResult{}, err
+	}
+	select {
+	case s.observed <- job.AttemptCount:
+	default:
+	}
+	return ports.SplitResult{}, errors.New("observed failure")
+}
+
 func (s *recoverableJobStore) RecoverRunning(context.Context) (int64, error) {
 	s.recoverCalls++
 	return 2, nil
@@ -102,14 +124,11 @@ func TestWorker_FailedJobStopsAfterConfiguredTotalAttempts(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		got, err := store.Get(context.Background(), job.ID)
-		if err == nil && got.Status == domain.JobFailed && got.AttemptCount == 3 {
+		if err == nil && got.Status == domain.JobFailed && got.AttemptCount == 3 && len(got.AttemptLog) == 3 {
 			cancel()
 			<-done
 			if len(splitter.outDirs) != 3 {
 				t.Fatalf("splitter calls=%d want 3", len(splitter.outDirs))
-			}
-			if len(got.AttemptLog) != 3 {
-				t.Fatalf("attempt log=%+v", got.AttemptLog)
 			}
 			for i, attempt := range got.AttemptLog {
 				if attempt.Number != i+1 || attempt.At.IsZero() || attempt.Error != "split failed" {
@@ -123,4 +142,34 @@ func TestWorker_FailedJobStopsAfterConfiguredTotalAttempts(t *testing.T) {
 	cancel()
 	<-done
 	t.Fatal("job did not reach permanent failure")
+}
+
+func TestWorker_PersistsAttemptBeforeSplitterStarts(t *testing.T) {
+	job := domain.Job{
+		ID: "job-attempt-start", Fingerprint: "fp-attempt-start", Status: domain.JobQueued,
+		CuePath: writeCue(t, oneTrackCue), ImagePath: "/a.flac", CreatedAt: time.Now().UTC(),
+	}
+	store := &fakeJobStore{byFP: map[string]domain.Job{job.Fingerprint: job}}
+	observed := make(chan int, 1)
+	splitter := &attemptObservingSplitter{store: store, jobID: job.ID, observed: observed}
+	worker := &app.Worker{
+		Store: store, Runtime: app.NewRuntimeConfig(domain.Settings{MaxRetries: 1}, splitter),
+		Preflight: &fakePreflight{}, OutDir: t.TempDir(), Interval: 10 * time.Millisecond,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- worker.Run(ctx) }()
+
+	select {
+	case count := <-observed:
+		cancel()
+		<-done
+		if count != 1 {
+			t.Fatalf("attempt count at split start=%d, want 1", count)
+		}
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("splitter was not called")
+	}
 }

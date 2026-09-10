@@ -13,11 +13,25 @@ import (
 // ErrCrossDeviceRename indicates os.Rename cannot atomically move across filesystems.
 var ErrCrossDeviceRename = errors.New("cross-device rename not supported")
 
+// PublishMode selects how tracks become visible under finalOut.
+type PublishMode int
+
+const (
+	// PublishReplaceDir builds a complete album directory then atomically
+	// renames it into finalOut. An existing finalOut is moved aside first and
+	// only deleted after the new directory is live, so rollback never deletes
+	// pre-existing tracks.
+	PublishReplaceDir PublishMode = iota
+	// PublishMergeInto is retained for callers to receive an explicit error;
+	// merging cannot provide atomic album visibility.
+	PublishMergeInto
+)
+
 var (
 	osRename    = os.Rename
 	osMkdirAll  = os.MkdirAll
 	osRemoveAll = os.RemoveAll
-	osRemove    = os.Remove
+	osStat      = os.Stat
 )
 
 // StagingDir returns the per-job staging directory under baseOut.
@@ -48,14 +62,19 @@ func CleanupStaging(staging string) error {
 	return nil
 }
 
-// PublishTracks atomically moves track files from staging into finalOut via os.Rename.
-// On failure, best-effort removes files already moved into finalOut during this call.
-func PublishTracks(staging string, finalOut string, files []string) (published []string, err error) {
+// PublishTracks moves verified tracks from staging into finalOut.
+//
+// PublishReplaceDir assembles tracks under a sibling temp directory and renames
+// that directory into place as a unit. PublishMergeInto is rejected because it
+// would expose a partial album.
+func PublishTracks(staging, finalOut, jobID string, files []string, mode PublishMode) (published []string, err error) {
 	log := slog.Default()
 	start := time.Now()
 	log.Info("publish tracks start",
 		"staging", staging,
 		"final_out", finalOut,
+		"job_id", jobID,
+		"mode", mode.String(),
 		"file_count", len(files),
 	)
 	defer func() {
@@ -66,42 +85,128 @@ func PublishTracks(staging string, finalOut string, files []string) (published [
 		)
 	}()
 
-	if err := osMkdirAll(finalOut, 0o755); err != nil {
-		return nil, fmt.Errorf("ensure final out %q: %w", finalOut, err)
+	switch mode {
+	case PublishMergeInto:
+		return nil, errors.New("merge publish is not atomic; use directory replacement")
+	default:
+		return publishReplaceDir(staging, finalOut, jobID, files)
+	}
+}
+
+func (m PublishMode) String() string {
+	switch m {
+	case PublishMergeInto:
+		return "merge"
+	default:
+		return "replace_dir"
+	}
+}
+
+func publishReplaceDir(staging, finalOut, jobID string, files []string) ([]string, error) {
+	parent := filepath.Dir(finalOut)
+	base := filepath.Base(finalOut)
+	if parent == "" || base == "" || base == "." || base == string(filepath.Separator) {
+		return nil, fmt.Errorf("invalid final out %q", finalOut)
+	}
+	if err := osMkdirAll(parent, 0o755); err != nil {
+		return nil, fmt.Errorf("ensure final parent %q: %w", parent, err)
 	}
 
-	published = make([]string, 0, len(files))
+	publishDir := filepath.Join(parent, "."+base+".publishing-"+jobID)
+	asideDir := filepath.Join(parent, "."+base+".aside-"+jobID)
+	if err := osRemoveAll(publishDir); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("remove leftover publish dir %q: %w", publishDir, err)
+	}
+	if _, err := osStat(asideDir); err == nil {
+		if _, finalErr := osStat(finalOut); os.IsNotExist(finalErr) {
+			if restoreErr := renamePath(asideDir, finalOut); restoreErr != nil {
+				return nil, fmt.Errorf("restore interrupted album swap: %w", restoreErr)
+			}
+		} else if finalErr == nil {
+			return nil, fmt.Errorf("stale album backup requires recovery: %s", asideDir)
+		} else {
+			return nil, fmt.Errorf("stat final out %q during recovery: %w", finalOut, finalErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat album backup %q: %w", asideDir, err)
+	}
+	if err := osMkdirAll(publishDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create publish dir %q: %w", publishDir, err)
+	}
+
+	if err := moveTracks(staging, publishDir, files); err != nil {
+		_ = osRemoveAll(publishDir)
+		return nil, err
+	}
+
+	_, finalErr := osStat(finalOut)
+	finalExists := finalErr == nil
+	if finalErr != nil && !os.IsNotExist(finalErr) {
+		_ = osRemoveAll(publishDir)
+		return nil, fmt.Errorf("stat final out %q: %w", finalOut, finalErr)
+	}
+
+	if finalExists {
+		if err := renamePath(finalOut, asideDir); err != nil {
+			_ = osRemoveAll(publishDir)
+			return nil, err
+		}
+		if err := renamePath(publishDir, finalOut); err != nil {
+			if restoreErr := renamePath(asideDir, finalOut); restoreErr != nil {
+				slog.Default().Error("publish swap restore failed",
+					"aside", asideDir, "final_out", finalOut, "error", restoreErr)
+			}
+			_ = osRemoveAll(publishDir)
+			return nil, err
+		}
+		if err := osRemoveAll(asideDir); err != nil {
+			slog.Default().Warn("remove aside album failed", "aside", asideDir, "error", err)
+		}
+	} else if err := renamePath(publishDir, finalOut); err != nil {
+		_ = osRemoveAll(publishDir)
+		return nil, err
+	}
+
+	return publishedPaths(finalOut, files), nil
+}
+
+func moveTracks(staging, destDir string, files []string) error {
 	for _, name := range files {
 		src := trackSourcePath(staging, name)
-		dst := filepath.Join(finalOut, filepath.Base(src))
-
-		if renameErr := osRename(src, dst); renameErr != nil {
-			if isCrossDeviceRenameErr(renameErr) {
-				renameErr = fmt.Errorf("%w: %v", ErrCrossDeviceRename, renameErr)
-			} else {
-				renameErr = fmt.Errorf("rename %q -> %q: %w", src, dst, renameErr)
-			}
-			rollbackPartialPublish(published)
-			return nil, renameErr
+		dst := filepath.Join(destDir, filepath.Base(src))
+		if err := renamePath(src, dst); err != nil {
+			return err
 		}
-		published = append(published, dst)
 	}
-	return published, nil
+	return nil
+}
+
+func publishedPaths(finalOut string, files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, name := range files {
+		out = append(out, filepath.Join(finalOut, filepath.Base(trackSourcePath("", name))))
+	}
+	return out
+}
+
+func renamePath(oldpath, newpath string) error {
+	if err := osRename(oldpath, newpath); err != nil {
+		if isCrossDeviceRenameErr(err) {
+			return fmt.Errorf("%w: %v", ErrCrossDeviceRename, err)
+		}
+		return fmt.Errorf("rename %q -> %q: %w", oldpath, newpath, err)
+	}
+	return nil
 }
 
 func trackSourcePath(staging, name string) string {
 	if filepath.IsAbs(name) {
 		return name
 	}
-	return filepath.Join(staging, name)
-}
-
-func rollbackPartialPublish(published []string) {
-	for _, path := range published {
-		if err := osRemove(path); err != nil && !os.IsNotExist(err) {
-			slog.Default().Warn("rollback partial publish failed", "path", path, "error", err)
-		}
+	if staging == "" {
+		return name
 	}
+	return filepath.Join(staging, name)
 }
 
 func isCrossDeviceRenameErr(err error) bool {

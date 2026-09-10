@@ -76,7 +76,6 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 
 	log := w.logger()
-	log.Info("worker claimed job", "job_id", job.ID)
 
 	splitter, outDir, inPlace := w.Splitter, w.OutDir, w.InPlace
 	maxAttempts := (domain.Settings{}).MaxAttempts()
@@ -85,6 +84,26 @@ func (w *Worker) runOnce(ctx context.Context) error {
 		splitter, outDir, inPlace = currentSplitter, settings.OutDir, settings.InPlace
 		maxAttempts = settings.MaxAttempts()
 	}
+	if job.AttemptCount >= maxAttempts {
+		job.Status = domain.JobFailed
+		job.FinishedAt = time.Now().UTC()
+		job.Error = "retry budget exhausted during crash recovery"
+		if err := w.Store.Update(ctx, job); err != nil {
+			return err
+		}
+		log.Warn("worker skipped exhausted job",
+			"job_id", job.ID,
+			"attempt", job.AttemptCount,
+			"max_attempts", maxAttempts,
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+		return nil
+	}
+	log.Info("worker claimed job",
+		"job_id", job.ID,
+		"next_attempt", job.AttemptCount+1,
+		"max_attempts", maxAttempts,
+	)
 	runner := JobRunner{
 		Store: w.Store, Splitter: splitter, Inspector: w.Inspector,
 		Tagger: w.Tagger, Preflight: w.Preflight, ReadFile: w.ReadFile, Log: log,

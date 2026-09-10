@@ -27,28 +27,20 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		)
 	}()
 
-	finalOut := outDir
 	stagingBase := outDir
 	if inPlace {
-		finalOut = filepath.Dir(job.ImagePath)
-		stagingBase = finalOut
-	} else {
-		finalOut = filepath.Join(outDir, albumOutputKey(job))
+		stagingBase = filepath.Dir(job.ImagePath)
 	}
+	finalOut := filepath.Join(stagingBase, albumOutputKey(job))
 
-	running := job
-	if running.Status != domain.JobRunning {
-		running.Status = domain.JobRunning
-		running.StartedAt = time.Now().UTC()
-		if err := r.Store.Update(ctx, running); err != nil {
-			return job, err
-		}
-	} else if running.StartedAt.IsZero() {
-		running.StartedAt = time.Now().UTC()
-		if err := r.Store.Update(ctx, running); err != nil {
-			return job, err
-		}
+	running := domain.BeginAttempt(job, time.Now().UTC())
+	if err := r.Store.Update(ctx, running); err != nil {
+		return job, err
 	}
+	log.Info("run job attempt started",
+		"job_id", job.ID,
+		"attempt", running.AttemptCount,
+	)
 
 	preflightStart := time.Now()
 	if r.Preflight == nil {
@@ -126,22 +118,25 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		return r.failJob(ctx, finished, result, runErr, log)
 	}
 
-	published, err := PublishTracks(staging, finalOut, result.OutputFiles)
+	stagedFiles := result.OutputFiles
+	result.OutputFiles = publishedPaths(finalOut, stagedFiles)
+	finished.FinishedAt = time.Now().UTC()
+	finished.Status = domain.JobCompleted
+	finished.Log = buildJobLog(result)
+	if err := r.Store.Update(ctx, finished); err != nil {
+		persistErr := fmt.Errorf("persist completed job: %w", err)
+		runErr := cleanup(persistErr)
+		return r.failJob(ctx, finished, result, runErr, log)
+	}
+
+	published, err := PublishTracks(staging, finalOut, job.ID, stagedFiles, PublishReplaceDir)
 	if err != nil {
 		runErr := cleanup(err)
 		return r.failJob(ctx, finished, result, runErr, log)
 	}
 	result.OutputFiles = published
 	if err := cleanup(nil); err != nil {
-		rollbackPartialPublish(published)
 		return r.failJob(ctx, finished, result, err, log)
-	}
-
-	finished.FinishedAt = time.Now().UTC()
-	finished.Status = domain.JobCompleted
-	finished.Log = buildJobLog(result)
-	if err := r.Store.Update(ctx, finished); err != nil {
-		return finished, err
 	}
 
 	log.Info("run job completed",
