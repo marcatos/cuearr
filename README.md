@@ -20,7 +20,9 @@
 
 **v0.1.0** is the first tagged release: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.1.0), container [`ghcr.io/marcatos/cuearr:v0.1.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag).
 
-Open backlog (community welcome): [Issues](https://github.com/marcatos/cuearr/issues) — includes worker claim (#11), OIDC polish (#12), async scan (#13), Docker smoke docs (#14), native engine spike (#10).
+**Roadmap:** [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
+
+**Active now:** **B1** prove the promise ([#15](https://github.com/marcatos/cuearr/issues/15)–[#18](https://github.com/marcatos/cuearr/issues/18), [#14](https://github.com/marcatos/cuearr/issues/14)) and **B6** competitive comparison ([#30](https://github.com/marcatos/cuearr/issues/30)). Shipped earlier: atomic job claim, OIDC polish, async scan.
 
 ## Why Cuearr exists
 
@@ -32,7 +34,7 @@ Many music downloads still ship as **one big FLAC (or WAV/APE) + a `.cue` sheet*
 | Plex Music shows one file, weak track browsing | Normal album → track library |
 | Manual `shntool` / Flacon every time | Watch folder + Lidarr webhook, unattended |
 
-Cuearr is the missing *arr for that gap: watch (or hook) → split with **shntool** (gapless-friendly) → drop ready tracks where Lidarr already looks.
+Cuearr focuses on **verified** splits and a clear Lidarr-oriented path (see strategy: compare vs Unpackerr / Splittarr / Flacon before expanding scope). Flow: watch (or hook) → split with **shntool** → drop ready tracks where Lidarr looks.
 
 ## What it does (v0.1)
 
