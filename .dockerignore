@@ -1,0 +1,8 @@
+.git
+.superpowers
+bin
+dist
+data
+**/cuearr.db
+*.md
+!README.md

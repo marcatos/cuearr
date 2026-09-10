@@ -1,0 +1,7 @@
+http_addr: ":8787"
+data_dir: /data
+watch_dirs: ["/watch"]
+out_dir: /out
+in_place: false
+engine: shntool
+log_level: info

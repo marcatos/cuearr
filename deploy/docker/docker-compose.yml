@@ -1,0 +1,19 @@
+services:
+  cuearr:
+    image: ghcr.io/marcatos/cuearr:latest
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      CUEARR_INITIAL_PASSWORD: ${CUEARR_INITIAL_PASSWORD:?set CUEARR_INITIAL_PASSWORD}
+      CUEARR_API_KEY: ${CUEARR_API_KEY:-}
+    volumes:
+      - cuearr-data:/data
+      - ${CUEARR_WATCH_DIR:-./watch}:/watch
+      - ${CUEARR_OUT_DIR:-./out}:/out
+    restart: unless-stopped
+
+volumes:
+  cuearr-data:

@@ -29,6 +29,31 @@ go build -o bin/cuearr.exe ./cmd/cuearr
 ./bin/cuearr serve
 ```
 
+## Docker
+
+Image: [`ghcr.io/marcatos/cuearr`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (multi-arch `linux/amd64`, `linux/arm64`). Runtime includes **shntool**, **cuetools**, and **flac**.
+
+Build and run with Compose (from repo root):
+
+```bash
+export CUEARR_INITIAL_PASSWORD='choose-a-strong-password'
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+```
+
+Volumes: **`cuearr-data`** (SQLite + settings under `/data`), host **`watch`** → `/watch`, host **`out`** → `/out`. Override paths with `CUEARR_WATCH_DIR` / `CUEARR_OUT_DIR`. Optional bootstrap env: `CUEARR_API_KEY`.
+
+Manual build:
+
+```bash
+docker build -f deploy/docker/Dockerfile -t cuearr:local .
+docker run --rm -p 8787:8787 \
+  -e CUEARR_INITIAL_PASSWORD='…' \
+  -v cuearr-data:/data -v "$(pwd)/watch:/watch" -v "$(pwd)/out:/out" \
+  cuearr:local
+```
+
+Tagged releases publish GitHub release archives (`linux`/`darwin`/`windows` amd64/arm64 where applicable) and push the container image (workflow: `.github/workflows/release.yml`).
+
 ## Lidarr Connect
 
 Cuearr accepts the same hook URL for **Connect webhooks** and an optional **custom script**.
