@@ -57,6 +57,9 @@ func (s ImportService) AfterSplitComplete(
 	if err != nil {
 		return job, err
 	}
+	if err := s.Store.Update(ctx, requested); err != nil {
+		return requested, fmt.Errorf("persist requested import: %w", err)
+	}
 
 	requestErr := s.Client.RequestImport(ctx, requested.OutDir)
 	if requestErr != nil {

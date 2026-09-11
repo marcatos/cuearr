@@ -38,10 +38,15 @@ type RuntimeConfig struct {
 	mu       sync.RWMutex
 	settings domain.Settings
 	splitter ports.Splitter
+	changed  chan struct{}
 }
 
 func NewRuntimeConfig(settings domain.Settings, splitter ports.Splitter) *RuntimeConfig {
-	return &RuntimeConfig{settings: cloneSettings(settings), splitter: splitter}
+	return &RuntimeConfig{
+		settings: cloneSettings(settings),
+		splitter: splitter,
+		changed:  make(chan struct{}),
+	}
 }
 
 func (c *RuntimeConfig) Snapshot() (domain.Settings, ports.Splitter) {
@@ -50,11 +55,25 @@ func (c *RuntimeConfig) Snapshot() (domain.Settings, ports.Splitter) {
 	return cloneSettings(c.settings), c.splitter
 }
 
+// SnapshotWithChanges returns the current runtime state and a channel closed by
+// the next Apply call. Reading both under one lock prevents missed updates.
+func (c *RuntimeConfig) SnapshotWithChanges() (
+	domain.Settings,
+	ports.Splitter,
+	<-chan struct{},
+) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cloneSettings(c.settings), c.splitter, c.changed
+}
+
 func (c *RuntimeConfig) Apply(settings domain.Settings, splitter ports.Splitter) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.settings = cloneSettings(settings)
 	c.splitter = splitter
+	close(c.changed)
+	c.changed = make(chan struct{})
 }
 
 func cloneSettings(settings domain.Settings) domain.Settings {

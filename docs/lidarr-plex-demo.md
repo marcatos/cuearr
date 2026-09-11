@@ -57,6 +57,8 @@ The script picks a path from Lidarr env vars (or `$1`), builds `{"path":"<path>"
 
 This extends Path A or B: after Cuearr has verified and published every output FLAC, it can ask Lidarr to scan that completed album directory.
 
+> **Avoid dual processing:** do not point Cuearr `watch_dirs` at a Lidarr download or incomplete directory that Lidarr is also importing from. Running both processors against one download directory can race on the same files. Prefer a separate Cuearr `out_dir` (for example, `/out`) and configure Lidarr to import the completed split output from that mapped path.
+
 1. In Cuearr **Settings**, set the Lidarr URL and API key, then enable **Request Lidarr import after split**.
 2. If Cuearr and Lidarr see different paths, add path-map rules such as `/out=>/downloads/cuearr`. The first matching prefix is applied.
 3. Optionally set the import poll interval. The safety-net poller retries eligible completed jobs whose import state is `none` or `failed`.

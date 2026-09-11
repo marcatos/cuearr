@@ -125,13 +125,6 @@ func runServe() error {
 		Client: lidarrClient,
 		Log:    log,
 	}
-	var importPollInterval time.Duration
-	if runtimeSettings.LidarrPollIntervalSec > 0 {
-		importPollInterval, err = durationFromSeconds(runtimeSettings.LidarrPollIntervalSec)
-		if err != nil {
-			return fmt.Errorf("lidarr poll interval: %w", err)
-		}
-	}
 
 	scanCtx := func(dir string) {
 		settings, _ := runtimeCfg.Snapshot()
@@ -188,13 +181,11 @@ func runServe() error {
 		}
 	}()
 
-	if importPollInterval > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			runImportPoller(ctx, importPollInterval, runtimeCfg, importService, log)
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runImportPoller(ctx, runtimeCfg, importService, log)
+	}()
 
 	watchers := newWatcherController(ctx, scanCtx, log)
 	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
@@ -444,30 +435,80 @@ func durationFromSeconds(seconds int) (time.Duration, error) {
 
 func runImportPoller(
 	ctx context.Context,
-	interval time.Duration,
 	runtimeCfg *app.RuntimeConfig,
 	importer *app.ImportService,
 	log *slog.Logger,
 ) {
 	started := time.Now()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	polls := 0
 	defer func() {
 		log.Info("Lidarr import poller stopped",
-			"interval", interval.String(),
+			"polls", polls,
 			"total_ms", time.Since(started).Milliseconds(),
 		)
 	}()
-	log.Info("Lidarr import poller started", "interval", interval.String())
+	log.Info("Lidarr import poller started")
 	for {
-		select {
-		case <-ctx.Done():
+		settings, ready := waitForImportPoll(ctx, runtimeCfg, func(seconds int) time.Duration {
+			interval, err := durationFromSeconds(seconds)
+			if err != nil {
+				log.Error("invalid Lidarr import poll interval",
+					"seconds", seconds,
+					"error", err.Error(),
+				)
+				return 0
+			}
+			return interval
+		})
+		if !ready {
 			return
-		case <-ticker.C:
-			settings, _ := runtimeCfg.Snapshot()
-			if _, err := importer.PollPendingImports(ctx, settings); err != nil {
-				log.Error("Lidarr import poll failed", "error", err.Error())
+		}
+		polls++
+		if _, err := importer.PollPendingImports(ctx, settings); err != nil {
+			log.Error("Lidarr import poll failed", "error", err.Error())
+		}
+	}
+}
+
+func waitForImportPoll(
+	ctx context.Context,
+	runtimeCfg *app.RuntimeConfig,
+	intervalFor func(int) time.Duration,
+) (domain.Settings, bool) {
+	for {
+		settings, _, changed := runtimeCfg.SnapshotWithChanges()
+		interval := time.Duration(0)
+		if settings.LidarrPollIntervalSec > 0 {
+			interval = intervalFor(settings.LidarrPollIntervalSec)
+		}
+		if interval <= 0 {
+			select {
+			case <-ctx.Done():
+				return domain.Settings{}, false
+			case <-changed:
+				continue
 			}
 		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			stopTimer(timer)
+			return domain.Settings{}, false
+		case <-changed:
+			stopTimer(timer)
+		case <-timer.C:
+			return settings, true
+		}
+	}
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C:
+	default:
 	}
 }

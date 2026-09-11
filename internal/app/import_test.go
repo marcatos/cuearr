@@ -12,14 +12,18 @@ import (
 )
 
 type fakeLidarrClient struct {
-	err   error
-	paths []string
+	err       error
+	paths     []string
+	onRequest func()
 }
 
 func (f *fakeLidarrClient) Ping(context.Context) error { return nil }
 
 func (f *fakeLidarrClient) RequestImport(_ context.Context, albumPath string) error {
 	f.paths = append(f.paths, albumPath)
+	if f.onRequest != nil {
+		f.onRequest()
+	}
 	return f.err
 }
 
@@ -27,8 +31,12 @@ func TestImportService_AfterSplitCompleteRequestsEnabledImport(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, time.September, 11, 7, 0, 0, 0, time.UTC)
 	job := completedImportJob("import-success", domain.ImportNone)
-	store := newImportStore(t, job)
-	client := &fakeLidarrClient{}
+	baseStore := newImportStore(t, job)
+	var events []string
+	store := &importOrderStore{fakeJobStore: baseStore, events: &events}
+	client := &fakeLidarrClient{onRequest: func() {
+		events = append(events, "request")
+	}}
 	service := app.ImportService{Store: store, Client: client, Clock: func() time.Time { return now }}
 
 	got, err := service.AfterSplitComplete(ctx, job, enabledImportSettings())
@@ -44,16 +52,31 @@ func TestImportService_AfterSplitCompleteRequestsEnabledImport(t *testing.T) {
 	if !got.ImportRequestedAt.Equal(now) || !got.ImportFinishedAt.Equal(now) {
 		t.Fatalf("import timestamps requested=%v finished=%v", got.ImportRequestedAt, got.ImportFinishedAt)
 	}
-	assertStoredJob(t, store, got)
+	wantEvents := []string{
+		"update:" + domain.ImportRequested + ":" + domain.JobCompleted,
+		"request",
+		"update:" + domain.ImportImported + ":" + domain.JobCompleted,
+	}
+	if !reflect.DeepEqual(events, wantEvents) {
+		t.Fatalf("events=%v, want %v", events, wantEvents)
+	}
+	assertStoredJob(t, baseStore, got)
 }
 
 func TestImportService_ImportFailureKeepsSplitCompleted(t *testing.T) {
 	ctx := context.Background()
 	requestErr := errors.New("Lidarr unavailable")
 	job := completedImportJob("import-failure", domain.ImportNone)
-	store := newImportStore(t, job)
+	baseStore := newImportStore(t, job)
+	var events []string
+	store := &importOrderStore{fakeJobStore: baseStore, events: &events}
 	service := app.ImportService{
-		Store: store, Client: &fakeLidarrClient{err: requestErr},
+		Store: store, Client: &fakeLidarrClient{
+			err: requestErr,
+			onRequest: func() {
+				events = append(events, "request")
+			},
+		},
 		Clock: func() time.Time { return time.Date(2026, 9, 11, 7, 1, 0, 0, time.UTC) },
 	}
 
@@ -67,7 +90,15 @@ func TestImportService_ImportFailureKeepsSplitCompleted(t *testing.T) {
 	if got.ImportStatus != domain.ImportFailed || got.ImportError != requestErr.Error() {
 		t.Fatalf("import status=%q error=%q", got.ImportStatus, got.ImportError)
 	}
-	assertStoredJob(t, store, got)
+	wantEvents := []string{
+		"update:" + domain.ImportRequested + ":" + domain.JobCompleted,
+		"request",
+		"update:" + domain.ImportFailed + ":" + domain.JobCompleted,
+	}
+	if !reflect.DeepEqual(events, wantEvents) {
+		t.Fatalf("events=%v, want %v", events, wantEvents)
+	}
+	assertStoredJob(t, baseStore, got)
 }
 
 func TestImportService_DisabledImportIsSkipped(t *testing.T) {
@@ -213,4 +244,14 @@ func assertStoredJob(t *testing.T, store *fakeJobStore, want domain.Job) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("stored job=%+v, want %+v", got, want)
 	}
+}
+
+type importOrderStore struct {
+	*fakeJobStore
+	events *[]string
+}
+
+func (s *importOrderStore) Update(ctx context.Context, job domain.Job) error {
+	*s.events = append(*s.events, "update:"+job.ImportStatus+":"+job.Status)
+	return s.fakeJobStore.Update(ctx, job)
 }
