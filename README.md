@@ -18,17 +18,15 @@
 
 ## Status
 
-**v0.4.0** remains the current release; **v0.5.0** is upcoming with B4. Current [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
+**v0.5.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.5.0), container [`ghcr.io/marcatos/cuearr:v0.5.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
 
-**Ready for v0.5.0:** **B4** real-case integration — separate Lidarr import state and requests, plus verified PCM WAV+CUE → FLAC splitting.
-
-**Shipped:** **B1**–**B3** (verified splits, [file reliability](docs/file-reliability.md), [assisted beta](docs/beta.md)) · **B6** [competitive comparison](docs/competitive-comparison.md)
+**Shipped:** **B1**–**B3** (verified splits, [file reliability](docs/file-reliability.md), [assisted beta](docs/beta.md)) · **B4** Lidarr import state/connector + WAV+CUE · **B6** [competitive comparison](docs/competitive-comparison.md)
 
 **Later (B5):** [#28](https://github.com/marcatos/cuearr/issues/28) corpus/SQLite · [#29](https://github.com/marcatos/cuearr/issues/29) Unraid verified · [#10](https://github.com/marcatos/cuearr/issues/10) native engine (deferred).
 
 **Roadmap:** [Project board](https://github.com/users/marcatos/projects/1) · [Milestones](https://github.com/marcatos/cuearr/milestones) · [product strategy](docs/product-strategy-2026-09-10.md) · [batches B1–B6](docs/roadmap-batches.md) · [Issues](https://github.com/marcatos/cuearr/issues)
 
-**Verified integration (B1):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke only; live Lidarr/Plex assumed until you validate).
+**Verified integration (B1 + B4):** [Lidarr/Plex demo path](docs/lidarr-plex-demo.md) (incl. Path C import request) · [compatibility matrix](docs/compatibility-matrix.md) (automated tests + Docker smoke; live Lidarr/Plex assumed until you validate).
 
 **Beta (B3):** [Recruitment + reporting](docs/beta.md) · [10-minute onboarding](docs/onboarding.md) — synthetic fixture first, then signup issue for the assisted cohort.
 
