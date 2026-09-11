@@ -28,6 +28,8 @@ type JobRunner struct {
 	Preflight ports.JobPreflight
 	ReadFile  func(string) ([]byte, error)
 	Log       *slog.Logger
+	Importer  *ImportService
+	Settings  func() domain.Settings
 }
 
 func (r JobRunner) VerifySplit(

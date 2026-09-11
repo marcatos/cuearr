@@ -139,6 +139,22 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		return r.failJob(ctx, finished, result, err, log)
 	}
 
+	if r.Importer != nil {
+		settings := domain.Settings{}
+		if r.Settings != nil {
+			settings = r.Settings()
+		}
+		imported, importErr := r.Importer.AfterSplitComplete(ctx, finished, settings)
+		finished = imported
+		if importErr != nil {
+			log.Warn("post-split import failed without failing completed job",
+				"job_id", job.ID,
+				"import_status", finished.ImportStatus,
+				"error", importErr.Error(),
+			)
+		}
+	}
+
 	log.Info("run job completed",
 		"job_id", job.ID,
 		"output_files", len(result.OutputFiles),
