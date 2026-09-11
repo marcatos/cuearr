@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/marcatos/cuearr/internal/adapters/audio/metaflac"
+	"github.com/marcatos/cuearr/internal/adapters/audio/wavduration"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
 	"github.com/marcatos/cuearr/internal/app"
 	"github.com/marcatos/cuearr/internal/domain"
@@ -38,20 +39,20 @@ func (e2eExecRunner) Run(ctx context.Context, name string, args ...string) (stdo
 	return outBuf.String(), errBuf.String(), exitCode, nil
 }
 
-func e2eAlbumDir(t *testing.T) string {
+func e2eAlbumDir(t *testing.T, fixtureDir, imageName string) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller")
 	}
-	dir := filepath.Join(filepath.Dir(file), "..", "..", "testdata", "e2e_album")
+	dir := filepath.Join(filepath.Dir(file), "..", "..", "testdata", fixtureDir)
 	cue := filepath.Join(dir, "album.cue")
-	flac := filepath.Join(dir, "album.flac")
+	image := filepath.Join(dir, imageName)
 	if _, err := os.Stat(cue); err != nil {
 		e2eUnavailable(t, "fixture cue missing (%v); run scripts/generate_fixture.sh", err)
 	}
-	if _, err := os.Stat(flac); err != nil {
-		e2eUnavailable(t, "fixture flac missing (%v); run scripts/generate_fixture.sh or scripts/generate_fixture.ps1", err)
+	if _, err := os.Stat(image); err != nil {
+		e2eUnavailable(t, "fixture image missing (%v); run scripts/generate_fixture.sh or scripts/generate_fixture.ps1", err)
 	}
 	return dir
 }
@@ -72,9 +73,18 @@ func requireE2EExecutable(t *testing.T, name string) {
 }
 
 func TestE2E_RunJobSplitsVerifiesAndTagsFixture(t *testing.T) {
+	runE2ESplitFixture(t, "e2e_album", "album.flac")
+}
+
+func TestE2E_RunJobSplitsWAVSourceToVerifiedFLACs(t *testing.T) {
+	runE2ESplitFixture(t, "e2e_album_wav", "album.wav")
+}
+
+func runE2ESplitFixture(t *testing.T, fixtureDir, imageName string) {
+	t.Helper()
 	requireE2EExecutable(t, "shntool")
 	requireE2EExecutable(t, "metaflac")
-	albumDir := e2eAlbumDir(t)
+	albumDir := e2eAlbumDir(t, fixtureDir, imageName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -86,10 +96,10 @@ func TestE2E_RunJobSplitsVerifiesAndTagsFixture(t *testing.T) {
 	audio := metaflac.New(commandRunner, "metaflac")
 	store := &fakeJobStore{}
 	job := domain.Job{
-		ID:          "e2e-synthetic-album",
-		Fingerprint: "e2e-synthetic-album",
+		ID:          "e2e-" + strings.TrimSuffix(imageName, filepath.Ext(imageName)),
+		Fingerprint: "e2e-" + strings.TrimSuffix(imageName, filepath.Ext(imageName)),
 		CuePath:     filepath.Join(albumDir, "album.cue"),
-		ImagePath:   filepath.Join(albumDir, "album.flac"),
+		ImagePath:   filepath.Join(albumDir, imageName),
 		Status:      domain.JobQueued,
 		Engine:      splitter.Name(),
 	}
@@ -98,7 +108,7 @@ func TestE2E_RunJobSplitsVerifiesAndTagsFixture(t *testing.T) {
 	}
 	runner := app.JobRunner{
 		Store: store, Splitter: splitter, Inspector: audio, Tagger: audio,
-		Preflight: &fakePreflight{},
+		WAVInspector: wavduration.New(nil), Preflight: &fakePreflight{},
 	}
 	finished, err := runner.RunJob(ctx, job, t.TempDir(), false)
 	if err != nil {

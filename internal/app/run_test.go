@@ -187,6 +187,48 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	}
 }
 
+func TestRunJob_UsesWAVInspectorOnlyForWAVSource(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	imagePath := filepath.Join(root, "album.WAV")
+	if err := os.WriteFile(imagePath, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job := domain.Job{
+		ID: "job-wav", Fingerprint: "job-wav",
+		CuePath: writeCue(t, oneTrackCue), ImagePath: imagePath, Status: domain.JobQueued,
+	}
+	store := &fakeJobStore{}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	outputInspector := &fakeFLACInspector{info: map[string]ports.FLACInfo{
+		"01.flac": {Duration: 3 * time.Second},
+	}}
+	wavInspector := &fakeFLACInspector{info: map[string]ports.FLACInfo{
+		imagePath: {Duration: 3 * time.Second},
+	}}
+	runner := app.JobRunner{
+		Store: store, Splitter: &fakeSplitter{result: ports.SplitResult{OutputFiles: []string{"01.flac"}}},
+		Inspector: outputInspector, WAVInspector: wavInspector,
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
+	}
+
+	got, err := runner.RunJob(ctx, job, filepath.Join(root, "out"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.JobCompleted {
+		t.Fatalf("status=%q, want completed", got.Status)
+	}
+	if len(wavInspector.calls) != 1 || wavInspector.calls[0] != imagePath {
+		t.Fatalf("WAV inspector calls=%v, want [%q]", wavInspector.calls, imagePath)
+	}
+	if len(outputInspector.calls) != 1 || filepath.Base(outputInspector.calls[0]) != "01.flac" {
+		t.Fatalf("output inspector calls=%v, want only 01.flac", outputInspector.calls)
+	}
+}
+
 func TestRunJob_ImportFailureDoesNotFailCompletedSplit(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

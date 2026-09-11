@@ -53,6 +53,21 @@ The script picks a path from Lidarr env vars (or `$1`), builds `{"path":"<path>"
 
 **Assumed:** Lidarr executes the script with the env vars you expect on On Import / Download.
 
+## Path C — Cuearr requests Lidarr import
+
+This extends Path A or B: after Cuearr has verified and published every output FLAC, it can ask Lidarr to scan that completed album directory.
+
+1. In Cuearr **Settings**, set the Lidarr URL and API key, then enable **Request Lidarr import after split**.
+2. If Cuearr and Lidarr see different paths, add path-map rules such as `/out=>/downloads/cuearr`. The first matching prefix is applied.
+3. Optionally set the import poll interval. The safety-net poller retries eligible completed jobs whose import state is `none` or `failed`.
+4. Trigger the album through Path A, Path B, or the watch folder. Cuearr sends Lidarr `POST /api/v1/command` with `{"name":"DownloadedAlbumsScan","path":"<mapped-output-dir>"}`.
+
+Split and import have separate states. A rejected or unavailable Lidarr request records `import_status=failed` and the sanitized error, while the verified split remains `status=completed` and its FLACs remain published. Use **Request import** on the completed job to retry manually.
+
+**Verified in automated tests:** command payload/path mapping, API-key redaction, import-state transitions, manual request, retry polling, and preservation of completed split status on import failure.
+
+**Operator validation still required:** no live Lidarr server runs in CI. Confirm that your Lidarr version accepts `DownloadedAlbumsScan`, both containers resolve the mapped directory to the same files, and Lidarr imports those FLACs into its configured root.
+
 ## Expected Cuearr output
 
 After a successful job (watch or hook):
@@ -64,7 +79,7 @@ After a successful job (watch or hook):
 
 ## Plex Music
 
-**Assumed:** If Lidarr imports per-track files into a root Plex scans, Plex Music shows one library entry per track/album as usual. **Plex was not exercised in B1** (no Plex server run in CI or this worktree). Validate on your library after Lidarr import.
+**Assumed:** If Lidarr imports per-track files into a root Plex scans, Plex Music shows one library entry per track/album as usual. **Plex is not exercised in CI**. Validate on your library after Lidarr import.
 
 ## Quick webhook smoke (no Lidarr binary)
 

@@ -11,18 +11,19 @@ import (
 )
 
 type Worker struct {
-	Store     ports.JobStore
-	Splitter  ports.Splitter
-	Inspector ports.FLACInspector
-	Tagger    ports.FLACTagger
-	Preflight ports.JobPreflight
-	ReadFile  func(string) ([]byte, error)
-	Runtime   *RuntimeConfig
-	Importer  *ImportService
-	OutDir    string
-	InPlace   bool
-	Log       *slog.Logger
-	Interval  time.Duration
+	Store        ports.JobStore
+	Splitter     ports.Splitter
+	Inspector    ports.FLACInspector
+	WAVInspector ports.FLACInspector
+	Tagger       ports.FLACTagger
+	Preflight    ports.JobPreflight
+	ReadFile     func(string) ([]byte, error)
+	Runtime      *RuntimeConfig
+	Importer     *ImportService
+	OutDir       string
+	InPlace      bool
+	Log          *slog.Logger
+	Interval     time.Duration
 }
 
 func (w *Worker) logger() *slog.Logger {
@@ -107,7 +108,8 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	)
 	runner := JobRunner{
 		Store: w.Store, Splitter: splitter, Inspector: w.Inspector,
-		Tagger: w.Tagger, Preflight: w.Preflight, ReadFile: w.ReadFile, Log: log,
+		WAVInspector: w.WAVInspector, Tagger: w.Tagger,
+		Preflight: w.Preflight, ReadFile: w.ReadFile, Log: log,
 		Importer: w.Importer,
 	}
 	if w.Runtime != nil {

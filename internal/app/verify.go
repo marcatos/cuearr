@@ -21,15 +21,16 @@ var (
 )
 
 type JobRunner struct {
-	Store     ports.JobStore
-	Splitter  ports.Splitter
-	Inspector ports.FLACInspector
-	Tagger    ports.FLACTagger
-	Preflight ports.JobPreflight
-	ReadFile  func(string) ([]byte, error)
-	Log       *slog.Logger
-	Importer  *ImportService
-	Settings  func() domain.Settings
+	Store        ports.JobStore
+	Splitter     ports.Splitter
+	Inspector    ports.FLACInspector
+	WAVInspector ports.FLACInspector
+	Tagger       ports.FLACTagger
+	Preflight    ports.JobPreflight
+	ReadFile     func(string) ([]byte, error)
+	Log          *slog.Logger
+	Importer     *ImportService
+	Settings     func() domain.Settings
 }
 
 func (r JobRunner) VerifySplit(

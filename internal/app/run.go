@@ -108,7 +108,7 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		return r.failJob(ctx, finished, result, runErr, log)
 	}
 
-	imageInfo, err := r.Inspector.Inspect(ctx, job.ImagePath)
+	imageInfo, err := r.inspectSource(ctx, job.ImagePath)
 	if err != nil {
 		runErr := cleanup(fmt.Errorf("inspect source image %q: %w", job.ImagePath, err))
 		return r.failJob(ctx, finished, result, runErr, log)
@@ -161,6 +161,16 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 		"split_duration_ms", splitMs,
 	)
 	return finished, nil
+}
+
+func (r JobRunner) inspectSource(ctx context.Context, path string) (ports.FLACInfo, error) {
+	if strings.EqualFold(filepath.Ext(path), ".wav") {
+		if r.WAVInspector == nil {
+			return ports.FLACInfo{}, errors.New("WAV source inspector is unavailable")
+		}
+		return r.WAVInspector.Inspect(ctx, path)
+	}
+	return r.Inspector.Inspect(ctx, path)
 }
 
 func (r JobRunner) failJob(

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/marcatos/cuearr/internal/adapters/audio/metaflac"
+	"github.com/marcatos/cuearr/internal/adapters/audio/wavduration"
 	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
@@ -166,16 +167,18 @@ func runServe() error {
 	var wg sync.WaitGroup
 
 	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
+	wavMetadata := wavduration.New(log)
 	preflight := app.Preflight{Probe: fsadapter.NewFileSafetyProbe(), Log: log}
 	worker := &app.Worker{
-		Store:     store,
-		Inspector: audioMetadata,
-		Tagger:    audioMetadata,
-		Preflight: preflight,
-		ReadFile:  os.ReadFile,
-		Runtime:   runtimeCfg,
-		Importer:  importService,
-		Log:       log,
+		Store:        store,
+		Inspector:    audioMetadata,
+		WAVInspector: wavMetadata,
+		Tagger:       audioMetadata,
+		Preflight:    preflight,
+		ReadFile:     os.ReadFile,
+		Runtime:      runtimeCfg,
+		Importer:     importService,
+		Log:          log,
 	}
 	wg.Add(1)
 	go func() {
