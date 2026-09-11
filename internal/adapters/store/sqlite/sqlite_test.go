@@ -29,15 +29,18 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	store := openTestStore(t)
 
 	created := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	importRequested := created.Add(time.Minute)
 	job := domain.Job{
-		ID:          "job-1",
-		Fingerprint: "fp-album-a",
-		CuePath:     "/music/a/album.cue",
-		ImagePath:   "/music/a/album.flac",
-		OutDir:      "/out/a",
-		Status:      domain.JobQueued,
-		Engine:      "shntool",
-		CreatedAt:   created,
+		ID:                "job-1",
+		Fingerprint:       "fp-album-a",
+		CuePath:           "/music/a/album.cue",
+		ImagePath:         "/music/a/album.flac",
+		OutDir:            "/out/a",
+		Status:            domain.JobQueued,
+		Engine:            "shntool",
+		ImportStatus:      domain.ImportRequested,
+		ImportRequestedAt: importRequested,
+		CreatedAt:         created,
 	}
 
 	got, err := store.Create(ctx, job)
@@ -55,6 +58,9 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	if byFP.ID != job.ID {
 		t.Fatalf("find by fingerprint id=%q want %q", byFP.ID, job.ID)
 	}
+	if byFP.ImportStatus != domain.ImportRequested || !byFP.ImportRequestedAt.Equal(importRequested) {
+		t.Fatalf("find by fingerprint import fields: %+v", byFP)
+	}
 
 	started := created.Add(2 * time.Minute)
 	running := byFP
@@ -69,6 +75,9 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	completed.Status = domain.JobCompleted
 	completed.FinishedAt = finished
 	completed.Log = "split ok: 12 tracks"
+	completed.ImportStatus = domain.ImportFailed
+	completed.ImportError = "lidarr rejected import"
+	completed.ImportFinishedAt = finished.Add(time.Second)
 	completed.AttemptCount = 1
 	completed.AttemptLog = []domain.JobAttempt{{
 		Number: 1,
@@ -105,6 +114,9 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	if list[0].Status != domain.JobCompleted || list[0].Log != completed.Log {
 		t.Fatalf("newest job: %+v", list[0])
 	}
+	if list[1].ImportStatus != domain.ImportNone {
+		t.Fatalf("empty import status=%q want %q", list[1].ImportStatus, domain.ImportNone)
+	}
 
 	stored, err := store.Get(ctx, "job-1")
 	if err != nil {
@@ -112,6 +124,11 @@ func TestJobStore_createFindUpdateList(t *testing.T) {
 	}
 	if !stored.StartedAt.Equal(started) || !stored.FinishedAt.Equal(finished) {
 		t.Fatalf("times: started=%v finished=%v", stored.StartedAt, stored.FinishedAt)
+	}
+	if stored.ImportStatus != domain.ImportFailed || stored.ImportError != completed.ImportError ||
+		!stored.ImportRequestedAt.Equal(importRequested) ||
+		!stored.ImportFinishedAt.Equal(completed.ImportFinishedAt) {
+		t.Fatalf("import fields: %+v", stored)
 	}
 	if stored.AttemptCount != 1 || len(stored.AttemptLog) != 1 ||
 		stored.AttemptLog[0].Number != 1 || stored.AttemptLog[0].Error != "first failure" ||
