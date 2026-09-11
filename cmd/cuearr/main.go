@@ -18,10 +18,12 @@ import (
 	"time"
 
 	"github.com/marcatos/cuearr/internal/adapters/audio/metaflac"
+	"github.com/marcatos/cuearr/internal/adapters/audio/wavduration"
 	"github.com/marcatos/cuearr/internal/adapters/auth"
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
 	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
+	"github.com/marcatos/cuearr/internal/adapters/lidarr"
 	"github.com/marcatos/cuearr/internal/adapters/logging"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/native"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
@@ -111,6 +113,18 @@ func runServe() error {
 		return err
 	}
 	runtimeCfg := app.NewRuntimeConfig(runtimeSettings, splitter)
+	lidarrClient := &runtimeLidarrClient{
+		settings: func() domain.Settings {
+			settings, _ := runtimeCfg.Snapshot()
+			return settings
+		},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+	importService := &app.ImportService{
+		Store:  store,
+		Client: lidarrClient,
+		Log:    log,
+	}
 
 	scanCtx := func(dir string) {
 		settings, _ := runtimeCfg.Snapshot()
@@ -146,15 +160,18 @@ func runServe() error {
 	var wg sync.WaitGroup
 
 	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
+	wavMetadata := wavduration.New(log)
 	preflight := app.Preflight{Probe: fsadapter.NewFileSafetyProbe(), Log: log}
 	worker := &app.Worker{
-		Store:     store,
-		Inspector: audioMetadata,
-		Tagger:    audioMetadata,
-		Preflight: preflight,
-		ReadFile:  os.ReadFile,
-		Runtime:   runtimeCfg,
-		Log:       log,
+		Store:        store,
+		Inspector:    audioMetadata,
+		WAVInspector: wavMetadata,
+		Tagger:       audioMetadata,
+		Preflight:    preflight,
+		ReadFile:     os.ReadFile,
+		Runtime:      runtimeCfg,
+		Importer:     importService,
+		Log:          log,
 	}
 	wg.Add(1)
 	go func() {
@@ -162,6 +179,12 @@ func runServe() error {
 		if err := worker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("worker exited", "error", err.Error())
 		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runImportPoller(ctx, runtimeCfg, importService, log)
 	}()
 
 	watchers := newWatcherController(ctx, scanCtx, log)
@@ -210,6 +233,10 @@ func runServe() error {
 		CreateJob: func(c context.Context, path string) (domain.Job, bool, error) {
 			settings, _ := runtimeCfg.Snapshot()
 			return app.ScanDir(c, path, store, settings.Engine, os.ReadFile, listDirEntries)
+		},
+		RequestImport: func(c context.Context, jobID string) (domain.Job, error) {
+			settings, _ := runtimeCfg.Snapshot()
+			return importService.RequestImportForJob(c, jobID, settings)
 		},
 		ScanWatch: func(c context.Context) error {
 			settings, _ := runtimeCfg.Snapshot()
@@ -370,4 +397,118 @@ func listDirEntries(path string) ([]domain.DirEntry, error) {
 		out = append(out, domain.DirEntry{Name: e.Name()})
 	}
 	return out, nil
+}
+
+type runtimeLidarrClient struct {
+	settings   func() domain.Settings
+	httpClient *http.Client
+}
+
+func (c *runtimeLidarrClient) Ping(ctx context.Context) error {
+	return c.client().Ping(ctx)
+}
+
+func (c *runtimeLidarrClient) RequestImport(ctx context.Context, albumPath string) error {
+	return c.client().RequestImport(ctx, albumPath)
+}
+
+func (c *runtimeLidarrClient) client() lidarr.Client {
+	settings := c.settings()
+	return lidarr.Client{
+		BaseURL:    settings.LidarrURL,
+		APIKey:     settings.LidarrAPIKey,
+		HTTPClient: c.httpClient,
+		PathMap:    settings.LidarrPathMap,
+	}
+}
+
+func durationFromSeconds(seconds int) (time.Duration, error) {
+	if seconds <= 0 {
+		return 0, fmt.Errorf("must be greater than zero")
+	}
+	duration := time.Duration(seconds) * time.Second
+	if duration <= 0 || duration/time.Second != time.Duration(seconds) {
+		return 0, fmt.Errorf("%d seconds exceeds supported duration", seconds)
+	}
+	return duration, nil
+}
+
+func runImportPoller(
+	ctx context.Context,
+	runtimeCfg *app.RuntimeConfig,
+	importer *app.ImportService,
+	log *slog.Logger,
+) {
+	started := time.Now()
+	polls := 0
+	defer func() {
+		log.Info("Lidarr import poller stopped",
+			"polls", polls,
+			"total_ms", time.Since(started).Milliseconds(),
+		)
+	}()
+	log.Info("Lidarr import poller started")
+	for {
+		settings, ready := waitForImportPoll(ctx, runtimeCfg, func(seconds int) time.Duration {
+			interval, err := durationFromSeconds(seconds)
+			if err != nil {
+				log.Error("invalid Lidarr import poll interval",
+					"seconds", seconds,
+					"error", err.Error(),
+				)
+				return 0
+			}
+			return interval
+		})
+		if !ready {
+			return
+		}
+		polls++
+		if _, err := importer.PollPendingImports(ctx, settings); err != nil {
+			log.Error("Lidarr import poll failed", "error", err.Error())
+		}
+	}
+}
+
+func waitForImportPoll(
+	ctx context.Context,
+	runtimeCfg *app.RuntimeConfig,
+	intervalFor func(int) time.Duration,
+) (domain.Settings, bool) {
+	for {
+		settings, _, changed := runtimeCfg.SnapshotWithChanges()
+		interval := time.Duration(0)
+		if settings.LidarrPollIntervalSec > 0 {
+			interval = intervalFor(settings.LidarrPollIntervalSec)
+		}
+		if interval <= 0 {
+			select {
+			case <-ctx.Done():
+				return domain.Settings{}, false
+			case <-changed:
+				continue
+			}
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			stopTimer(timer)
+			return domain.Settings{}, false
+		case <-changed:
+			stopTimer(timer)
+		case <-timer.C:
+			return settings, true
+		}
+	}
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C:
+	default:
+	}
 }

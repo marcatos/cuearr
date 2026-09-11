@@ -17,8 +17,9 @@ jobs:
           sudo apt-get install -y shntool cuetools flac sox ffmpeg
       - name: Generate synthetic split fixture
         run: |
-          rm -rf testdata/e2e_album
+          rm -rf testdata/e2e_album testdata/e2e_album_wav
           bash scripts/generate_fixture.sh
+          bash scripts/generate_fixture.sh testdata/e2e_album_wav wav
       - name: Test
         run: go test ./...
         env:

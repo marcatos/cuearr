@@ -7,6 +7,12 @@ const (
 	JobRunning   = "running"
 	JobCompleted = "completed"
 	JobFailed    = "failed"
+
+	ImportNone      = "none"
+	ImportRequested = "requested"
+	ImportImported  = "imported"
+	ImportFailed    = "failed"
+	ImportSkipped   = "skipped"
 )
 
 type JobAttempt struct {
@@ -17,7 +23,8 @@ type JobAttempt struct {
 
 type Job struct {
 	ID, Fingerprint, CuePath, ImagePath, OutDir, Status, Engine, Log, Error string
-	CreatedAt, StartedAt, FinishedAt                                        time.Time
+	ImportStatus, ImportError                                               string
+	CreatedAt, StartedAt, FinishedAt, ImportRequestedAt, ImportFinishedAt   time.Time
 	AttemptCount                                                            int
 	AttemptLog                                                              []JobAttempt
 }

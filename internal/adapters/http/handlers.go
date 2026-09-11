@@ -15,20 +15,24 @@ import (
 )
 
 type jobJSON struct {
-	ID           string              `json:"id"`
-	Fingerprint  string              `json:"fingerprint"`
-	CuePath      string              `json:"cue_path"`
-	ImagePath    string              `json:"image_path"`
-	OutDir       string              `json:"out_dir,omitempty"`
-	Status       string              `json:"status"`
-	Engine       string              `json:"engine"`
-	Log          string              `json:"log,omitempty"`
-	Error        string              `json:"error,omitempty"`
-	AttemptCount int                 `json:"attempt_count"`
-	Attempts     []domain.JobAttempt `json:"attempts"`
-	CreatedAt    string              `json:"created_at"`
-	StartedAt    string              `json:"started_at,omitempty"`
-	FinishedAt   string              `json:"finished_at,omitempty"`
+	ID                string              `json:"id"`
+	Fingerprint       string              `json:"fingerprint"`
+	CuePath           string              `json:"cue_path"`
+	ImagePath         string              `json:"image_path"`
+	OutDir            string              `json:"out_dir,omitempty"`
+	Status            string              `json:"status"`
+	Engine            string              `json:"engine"`
+	Log               string              `json:"log,omitempty"`
+	Error             string              `json:"error,omitempty"`
+	AttemptCount      int                 `json:"attempt_count"`
+	Attempts          []domain.JobAttempt `json:"attempts"`
+	CreatedAt         string              `json:"created_at"`
+	StartedAt         string              `json:"started_at,omitempty"`
+	FinishedAt        string              `json:"finished_at,omitempty"`
+	ImportStatus      string              `json:"import_status"`
+	ImportError       string              `json:"import_error,omitempty"`
+	ImportRequestedAt string              `json:"import_requested_at,omitempty"`
+	ImportFinishedAt  string              `json:"import_finished_at,omitempty"`
 }
 
 type authSettingsJSON struct {
@@ -51,8 +55,14 @@ type settingsJSON struct {
 	InPlace   bool     `json:"in_place"`
 	Engine    string   `json:"engine"`
 	// MaxRetries is the maximum total attempt count, including the first attempt.
-	MaxRetries int              `json:"max_retries"`
-	Auth       authSettingsJSON `json:"auth"`
+	MaxRetries            int                  `json:"max_retries"`
+	LidarrURL             string               `json:"lidarr_url"`
+	LidarrAPIKey          string               `json:"lidarr_api_key"`
+	LidarrAPIKeySet       bool                 `json:"lidarr_api_key_set"`
+	LidarrImportEnabled   bool                 `json:"lidarr_import_enabled"`
+	LidarrPathMap         []domain.PathMapRule `json:"lidarr_path_map"`
+	LidarrPollIntervalSec int                  `json:"lidarr_poll_interval_sec"`
+	Auth                  authSettingsJSON     `json:"auth"`
 }
 
 type settingsPutJSON struct {
@@ -61,8 +71,13 @@ type settingsPutJSON struct {
 	InPlace   bool     `json:"in_place"`
 	Engine    string   `json:"engine"`
 	// MaxRetries is the maximum total attempt count, including the first attempt.
-	MaxRetries int               `json:"max_retries"`
-	Auth       *authSettingsJSON `json:"auth"`
+	MaxRetries            int                  `json:"max_retries"`
+	LidarrURL             string               `json:"lidarr_url"`
+	LidarrAPIKey          string               `json:"lidarr_api_key"`
+	LidarrImportEnabled   bool                 `json:"lidarr_import_enabled"`
+	LidarrPathMap         []domain.PathMapRule `json:"lidarr_path_map"`
+	LidarrPollIntervalSec int                  `json:"lidarr_poll_interval_sec"`
+	Auth                  *authSettingsJSON    `json:"auth"`
 }
 
 func jobToJSON(j domain.Job) jobJSON {
@@ -83,23 +98,40 @@ func jobToJSON(j domain.Job) jobJSON {
 		AttemptCount: j.AttemptCount,
 		Attempts:     attempts,
 		CreatedAt:    formatTime(j.CreatedAt),
+		ImportStatus: j.ImportStatus,
 	}
+	if out.ImportStatus == "" {
+		out.ImportStatus = domain.ImportNone
+	}
+	out.ImportError = j.ImportError
 	if !j.StartedAt.IsZero() {
 		out.StartedAt = formatTime(j.StartedAt)
 	}
 	if !j.FinishedAt.IsZero() {
 		out.FinishedAt = formatTime(j.FinishedAt)
 	}
+	if !j.ImportRequestedAt.IsZero() {
+		out.ImportRequestedAt = formatTime(j.ImportRequestedAt)
+	}
+	if !j.ImportFinishedAt.IsZero() {
+		out.ImportFinishedAt = formatTime(j.ImportFinishedAt)
+	}
 	return out
 }
 
 func settingsToJSON(s domain.Settings) settingsJSON {
 	return settingsJSON{
-		WatchDirs:  s.WatchDirs,
-		OutDir:     s.OutDir,
-		InPlace:    s.InPlace,
-		Engine:     s.Engine,
-		MaxRetries: s.MaxAttempts(),
+		WatchDirs:             s.WatchDirs,
+		OutDir:                s.OutDir,
+		InPlace:               s.InPlace,
+		Engine:                s.Engine,
+		MaxRetries:            s.MaxAttempts(),
+		LidarrURL:             s.LidarrURL,
+		LidarrAPIKey:          "",
+		LidarrAPIKeySet:       s.LidarrAPIKey != "",
+		LidarrImportEnabled:   s.LidarrImportEnabled,
+		LidarrPathMap:         append([]domain.PathMapRule(nil), s.LidarrPathMap...),
+		LidarrPollIntervalSec: s.LidarrPollIntervalSec,
 		Auth: authSettingsJSON{
 			PasswordConfigured:      s.Auth.PasswordHash != "",
 			APIKeySet:               s.Auth.APIKey != "",
@@ -115,11 +147,16 @@ func settingsToJSON(s domain.Settings) settingsJSON {
 
 func settingsFromJSON(in settingsJSON) domain.Settings {
 	return domain.Settings{
-		WatchDirs:  in.WatchDirs,
-		OutDir:     in.OutDir,
-		InPlace:    in.InPlace,
-		Engine:     in.Engine,
-		MaxRetries: in.MaxRetries,
+		WatchDirs:             in.WatchDirs,
+		OutDir:                in.OutDir,
+		InPlace:               in.InPlace,
+		Engine:                in.Engine,
+		MaxRetries:            in.MaxRetries,
+		LidarrURL:             in.LidarrURL,
+		LidarrAPIKey:          in.LidarrAPIKey,
+		LidarrImportEnabled:   in.LidarrImportEnabled,
+		LidarrPathMap:         append([]domain.PathMapRule(nil), in.LidarrPathMap...),
+		LidarrPollIntervalSec: in.LidarrPollIntervalSec,
 	}
 }
 
@@ -317,6 +354,41 @@ func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobToJSON(requeued))
 }
 
+func (s *Server) handleImportJob(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	id := r.PathValue("id")
+	slog.Info("job import request started", "operation", "job_import", "job_id", id)
+	if s.deps.RequestImport == nil {
+		writeError(w, http.StatusInternalServerError, "import not configured")
+		slog.Error("job import request failed",
+			"operation", "job_import", "job_id", id,
+			"duration_ms", time.Since(started).Milliseconds(),
+			"error", "import not configured",
+		)
+		return
+	}
+	job, err := s.deps.RequestImport(r.Context(), id)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		slog.Error("job import request failed",
+			"operation", "job_import", "job_id", id,
+			"duration_ms", time.Since(started).Milliseconds(),
+			"error", err.Error(),
+		)
+		return
+	}
+	writeJSON(w, http.StatusOK, jobToJSON(job))
+	slog.Info("job import request completed",
+		"operation", "job_import", "job_id", id,
+		"import_status", job.ImportStatus,
+		"duration_ms", time.Since(started).Milliseconds(),
+	)
+}
+
 func (s *Server) handleScanJobs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -379,11 +451,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings := domain.Settings{
-		WatchDirs:  body.WatchDirs,
-		OutDir:     body.OutDir,
-		InPlace:    body.InPlace,
-		Engine:     body.Engine,
-		MaxRetries: body.MaxRetries,
+		WatchDirs:             body.WatchDirs,
+		OutDir:                body.OutDir,
+		InPlace:               body.InPlace,
+		Engine:                body.Engine,
+		MaxRetries:            body.MaxRetries,
+		LidarrURL:             body.LidarrURL,
+		LidarrImportEnabled:   body.LidarrImportEnabled,
+		LidarrPathMap:         append([]domain.PathMapRule(nil), body.LidarrPathMap...),
+		LidarrPollIntervalSec: body.LidarrPollIntervalSec,
 	}
 	settings.MaxRetries = settings.MaxAttempts()
 	existing, err := s.deps.Settings.Get(r.Context())
@@ -392,6 +468,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings.Auth = existing.Auth
+	settings.LidarrAPIKey = existing.LidarrAPIKey
+	if body.LidarrAPIKey != "" {
+		settings.LidarrAPIKey = body.LidarrAPIKey
+	}
 	if body.Auth != nil {
 		settings.Auth, err = mergeAuthSettings(existing.Auth, *body.Auth)
 		if err != nil {

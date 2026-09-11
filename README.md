@@ -18,11 +18,11 @@
 
 ## Status
 
-**v0.4.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
+**v0.4.0** remains the current release; **v0.5.0** is upcoming with B4. Current [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.4.0), container [`ghcr.io/marcatos/cuearr:v0.4.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
+
+**Ready for v0.5.0:** **B4** real-case integration — separate Lidarr import state and requests, plus verified PCM WAV+CUE → FLAC splitting.
 
 **Shipped:** **B1**–**B3** (verified splits, [file reliability](docs/file-reliability.md), [assisted beta](docs/beta.md)) · **B6** [competitive comparison](docs/competitive-comparison.md)
-
-**Next (B4):** real-case Lidarr integration — [#26](https://github.com/marcatos/cuearr/issues/26) connector beyond webhook · [#27](https://github.com/marcatos/cuearr/issues/27) formats only from repeated demand. Board: [Active now](https://github.com/users/marcatos/projects/1/views/4).
 
 **Later (B5):** [#28](https://github.com/marcatos/cuearr/issues/28) corpus/SQLite · [#29](https://github.com/marcatos/cuearr/issues/29) Unraid verified · [#10](https://github.com/marcatos/cuearr/issues/10) native engine (deferred).
 

@@ -64,11 +64,41 @@
     return engine === "native" ? "shntool" : engine || "shntool";
   }
 
+  function formatPathMap(rules) {
+    return (rules || [])
+      .map(function (rule) {
+        return String(rule.from || "") + "=>" + String(rule.to || "");
+      })
+      .join("\n");
+  }
+
+  function parsePathMap(text) {
+    const rules = [];
+    String(text || "")
+      .split(/\r?\n/)
+      .forEach(function (line, index) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return;
+        }
+        const separator = trimmed.indexOf("=>");
+        const from = separator >= 0 ? trimmed.slice(0, separator).trim() : "";
+        const to = separator >= 0 ? trimmed.slice(separator + 2).trim() : "";
+        if (!from || !to) {
+          throw new Error("Path map line " + (index + 1) + " must use from=>to.");
+        }
+        rules.push({ from: from, to: to });
+      });
+    return rules;
+  }
+
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       AUTO_REFRESH_MS: AUTO_REFRESH_MS,
       albumLabel: albumLabel,
+      formatPathMap: formatPathMap,
       normalizeEngine: normalizeEngine,
+      parsePathMap: parsePathMap,
       remediationHint: remediationHint,
     };
     return;
@@ -120,6 +150,10 @@
     return "status status-" + (st || "queued");
   }
 
+  function importStatus(job) {
+    return job.import_status || "none";
+  }
+
   async function loadJobs() {
     const data = await api("/api/v1/jobs?limit=500");
     return data.jobs || [];
@@ -155,6 +189,11 @@
           "\">" +
           esc(j.status) +
           "</span></td><td>" +
+          '<span class="' +
+          statusClass(importStatus(j)) +
+          '">' +
+          esc(importStatus(j)) +
+          "</span></td><td>" +
           esc(j.cue_path) +
           "</td><td>" +
           esc(j.engine) +
@@ -165,7 +204,7 @@
       })
       .join("");
     return (
-      "<table><thead><tr><th>Album</th><th>Status</th><th>CUE</th><th>Engine</th><th>Created</th></tr></thead><tbody>" +
+      "<table><thead><tr><th>Album</th><th>Split status</th><th>Import status</th><th>CUE</th><th>Engine</th><th>Created</th></tr></thead><tbody>" +
       rows +
       "</tbody></table>"
     );
@@ -243,11 +282,28 @@
 
   async function renderJob(id) {
     el.view.innerHTML = "<p class=\"muted\">Loading…</p>";
-    const j = await api("/api/v1/jobs/" + encodeURIComponent(id));
+    const responses = await Promise.all([
+      api("/api/v1/jobs/" + encodeURIComponent(id)),
+      api("/api/v1/settings"),
+    ]);
+    const j = responses[0];
+    const settings = responses[1];
     if (route().name !== "job" || route().id !== id) {
       return;
     }
     const err = j.error ? '<p class="msg err">' + esc(j.error) + "</p>" : "";
+    const importError = j.import_error
+      ? '<p class="msg err"><strong>Import:</strong> ' + esc(j.import_error) + "</p>"
+      : "";
+    const importState = importStatus(j);
+    const requestImportAction =
+      j.status === "completed" && settings.lidarr_import_enabled
+        ? '<button type="button" id="btn-import"' +
+          (importState === "imported" || importState === "skipped"
+            ? ' disabled title="This import cannot be requested again"'
+            : "") +
+          ">Request import</button>"
+        : "";
     const failedActions =
       j.status === "failed"
         ? '<div class="remediation"><h2>How to recover</h2><p>' +
@@ -260,11 +316,16 @@
       "</h1>" +
       '<p><a href="#/">&larr; Back to queue</a></p>' +
       err +
+      importError +
       '<div class="card">' +
-      "<p><span class=\"" +
+      "<p><strong>Split status:</strong> <span class=\"" +
       statusClass(j.status) +
       "\">" +
       esc(j.status) +
+      "</span> · <strong>Import status:</strong> <span class=\"" +
+      statusClass(importState) +
+      "\">" +
+      esc(importState) +
       "</span> · " +
       esc(j.engine) +
       "</p>" +
@@ -278,6 +339,13 @@
       "<p><strong>Attempts:</strong> " +
       esc(String(j.attempt_count || 0)) +
       "</p>" +
+      (j.import_requested_at
+        ? "<p><strong>Import requested:</strong> " + esc(j.import_requested_at) + "</p>"
+        : "") +
+      (j.import_finished_at
+        ? "<p><strong>Import finished:</strong> " + esc(j.import_finished_at) + "</p>"
+        : "") +
+      requestImportAction +
       failedActions +
       attemptHistory(j.attempts) +
       "<h2>Log</h2>" +
@@ -295,6 +363,32 @@
         } catch (e) {
           alert(e.message);
           retry.disabled = false;
+        }
+      };
+    }
+    const requestImport = document.getElementById("btn-import");
+    if (requestImport) {
+      requestImport.onclick = async function () {
+        const startedAt = Date.now();
+        requestImport.disabled = true;
+        console.info("INFO import request started", { jobId: j.id });
+        try {
+          const updated = await api("/api/v1/jobs/" + encodeURIComponent(j.id) + "/import", {
+            method: "POST",
+          });
+          console.info("INFO import request completed", {
+            jobId: j.id,
+            importStatus: updated.import_status,
+            durationMs: Date.now() - startedAt,
+          });
+          await renderJob(j.id);
+        } catch (e) {
+          console.error("ERROR import request failed", {
+            jobId: j.id,
+            durationMs: Date.now() - startedAt,
+          });
+          alert(e.message);
+          requestImport.disabled = false;
         }
       };
     }
@@ -329,6 +423,7 @@
     const auth = s.auth || {};
     const watch = (s.watch_dirs || []).join("\n");
     const domains = (auth.oidc_allowed_email_domains || []).join(", ");
+    const lidarrPathMap = formatPathMap(s.lidarr_path_map);
     const nativeWarning =
       s.engine === "native"
         ? '<p class="msg warn">The native engine is no longer supported. Save settings to switch to shntool.</p>'
@@ -352,6 +447,22 @@
       '<div class="form-row"><label>Max attempts (total, including first; default 3)</label><input type="number" min="1" name="max_retries" value="' +
       esc(String(s.max_retries != null ? s.max_retries : 3)) +
       '" /></div>' +
+      "<h2>Lidarr connector</h2>" +
+      '<div class="checkbox-row"><input type="checkbox" name="lidarr_import_enabled" id="lidarr_import_enabled"' +
+      (s.lidarr_import_enabled ? " checked" : "") +
+      ' /><label for="lidarr_import_enabled">Enable Lidarr import</label></div>' +
+      '<div class="form-row"><label>Lidarr URL</label><input type="text" name="lidarr_url" value="' +
+      esc(s.lidarr_url || "") +
+      '" /></div>' +
+      '<div class="form-row"><label>Lidarr API key (leave blank to keep)</label><input type="password" name="lidarr_api_key" autocomplete="new-password" placeholder="' +
+      (s.lidarr_api_key_set ? "••••••••" : "") +
+      '" /></div>' +
+      '<div class="form-row"><label>Poll interval (seconds)</label><input type="number" min="1" name="lidarr_poll_interval_sec" value="' +
+      esc(String(s.lidarr_poll_interval_sec != null ? s.lidarr_poll_interval_sec : 300)) +
+      '" /></div>' +
+      '<div class="form-row"><label>Path map (one from=&gt;to rule per line)</label><textarea name="lidarr_path_map" rows="4" placeholder="/downloads=&gt;/data">' +
+      esc(lidarrPathMap) +
+      "</textarea></div>" +
       "<h2>API access</h2>" +
       '<p class="muted">Optional API key sent as X-Api-Key (stored in this browser only).</p>' +
       '<div class="form-row"><label>Browser API key</label><input type="password" name="browser_api_key" autocomplete="off" value="' +
@@ -432,12 +543,23 @@
       } else {
         localStorage.removeItem(API_KEY_STORAGE);
       }
+      let lidarrPathMap;
+      try {
+        lidarrPathMap = parsePathMap(f.lidarr_path_map.value);
+      } catch (e) {
+        msg.innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
+        return;
+      }
       const body = {
         watch_dirs: watchDirs,
         out_dir: f.out_dir.value.trim(),
         in_place: f.in_place.checked,
         engine: "shntool",
         max_retries: parseInt(f.max_retries.value, 10) || 3,
+        lidarr_url: f.lidarr_url.value.trim(),
+        lidarr_import_enabled: f.lidarr_import_enabled.checked,
+        lidarr_poll_interval_sec: parseInt(f.lidarr_poll_interval_sec.value, 10) || 300,
+        lidarr_path_map: lidarrPathMap,
         auth: {
           oidc_enabled: f.oidc_enabled.checked,
           oidc_issuer: f.oidc_issuer.value.trim(),
@@ -455,12 +577,19 @@
       if (f.oidc_client_secret.value) {
         body.auth.oidc_client_secret = f.oidc_client_secret.value;
       }
+      if (f.lidarr_api_key.value) {
+        body.lidarr_api_key = f.lidarr_api_key.value;
+      }
       try {
         await api("/api/v1/settings", { method: "PUT", body: body });
         msg.innerHTML = '<p class="msg ok">Saved.</p>';
         f.password.value = "";
         f.api_key.value = "";
         f.oidc_client_secret.value = "";
+        f.lidarr_api_key.value = "";
+        if (f.lidarr_api_key.placeholder || body.lidarr_api_key) {
+          f.lidarr_api_key.placeholder = "••••••••";
+        }
       } catch (e) {
         msg.innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
       }

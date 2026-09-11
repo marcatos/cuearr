@@ -18,6 +18,7 @@ type Deps struct {
 	ApplySettings   func(ctx context.Context, settings domain.Settings) error
 	RuntimeSettings func() domain.Settings
 	CreateJob       func(ctx context.Context, path string) (domain.Job, bool, error)
+	RequestImport   func(ctx context.Context, jobID string) (domain.Job, error)
 	ScanWatch       func(ctx context.Context) error
 	CheckSQLite     func(ctx context.Context) error
 	CheckShntool    func(ctx context.Context) error

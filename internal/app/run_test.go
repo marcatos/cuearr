@@ -187,6 +187,88 @@ func TestRunJob_SuccessMarksCompletedAndLogsFiles(t *testing.T) {
 	}
 }
 
+func TestRunJob_UsesWAVInspectorOnlyForWAVSource(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	imagePath := filepath.Join(root, "album.WAV")
+	if err := os.WriteFile(imagePath, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job := domain.Job{
+		ID: "job-wav", Fingerprint: "job-wav",
+		CuePath: writeCue(t, oneTrackCue), ImagePath: imagePath, Status: domain.JobQueued,
+	}
+	store := &fakeJobStore{}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	outputInspector := &fakeFLACInspector{info: map[string]ports.FLACInfo{
+		"01.flac": {Duration: 3 * time.Second},
+	}}
+	wavInspector := &fakeFLACInspector{info: map[string]ports.FLACInfo{
+		imagePath: {Duration: 3 * time.Second},
+	}}
+	runner := app.JobRunner{
+		Store: store, Splitter: &fakeSplitter{result: ports.SplitResult{OutputFiles: []string{"01.flac"}}},
+		Inspector: outputInspector, WAVInspector: wavInspector,
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
+	}
+
+	got, err := runner.RunJob(ctx, job, filepath.Join(root, "out"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.JobCompleted {
+		t.Fatalf("status=%q, want completed", got.Status)
+	}
+	if len(wavInspector.calls) != 1 || wavInspector.calls[0] != imagePath {
+		t.Fatalf("WAV inspector calls=%v, want [%q]", wavInspector.calls, imagePath)
+	}
+	if len(outputInspector.calls) != 1 || filepath.Base(outputInspector.calls[0]) != "01.flac" {
+		t.Fatalf("output inspector calls=%v, want only 01.flac", outputInspector.calls)
+	}
+}
+
+func TestRunJob_ImportFailureDoesNotFailCompletedSplit(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	imagePath := filepath.Join(root, "album.flac")
+	if err := os.WriteFile(imagePath, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job := domain.Job{
+		ID: "job-import-fails", Fingerprint: "fp-import-fails",
+		CuePath: writeCue(t, oneTrackCue), ImagePath: imagePath, Status: domain.JobQueued,
+	}
+	store := newImportStore(t, job)
+	client := &fakeLidarrClient{err: errors.New("Lidarr rejected import")}
+	importer := &app.ImportService{Store: store, Client: client}
+	runner := app.JobRunner{
+		Store: store, Splitter: &fakeSplitter{result: ports.SplitResult{OutputFiles: []string{"01.flac"}}},
+		Inspector: &fakeFLACInspector{info: map[string]ports.FLACInfo{
+			imagePath: {Duration: 3 * time.Second},
+			"01.flac": {Duration: 3 * time.Second},
+		}},
+		Tagger: &fakeFLACTagger{}, Preflight: &fakePreflight{}, ReadFile: os.ReadFile,
+		Importer: importer, Settings: enabledImportSettings,
+	}
+
+	got, err := runner.RunJob(ctx, job, filepath.Join(root, "out"), false)
+	if err != nil {
+		t.Fatalf("RunJob error=%v, want split success despite import failure", err)
+	}
+	if got.Status != domain.JobCompleted || got.ImportStatus != domain.ImportFailed {
+		t.Fatalf("status=%q import_status=%q", got.Status, got.ImportStatus)
+	}
+	stored, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != domain.JobCompleted || stored.ImportStatus != domain.ImportFailed {
+		t.Fatalf("stored status=%q import_status=%q", stored.Status, stored.ImportStatus)
+	}
+}
+
 func TestRunJob_CompletedPersistenceFailureDoesNotExposeAlbum(t *testing.T) {
 	ctx := context.Background()
 	store := &failCompletedUpdateStore{err: errors.New("database unavailable")}
