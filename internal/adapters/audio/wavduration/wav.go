@@ -33,11 +33,14 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (info ports.FLACIn
 	start := time.Now()
 	i.log.Info("WAV inspection started", "path", path)
 	defer func() {
-		i.log.Info("WAV inspection finished",
-			"path", path,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"ok", err == nil,
-		)
+		attrs := []any{"path", path, "duration_ms", time.Since(start).Milliseconds()}
+		if err != nil {
+			attrs = append(attrs, "error", err.Error())
+			i.log.Error("WAV inspection failed", attrs...)
+			return
+		}
+		attrs = append(attrs, "sample_rate", info.SampleRate, "total_samples", info.TotalSamples)
+		i.log.Info("WAV inspection finished", attrs...)
 	}()
 
 	if err := ctx.Err(); err != nil {
