@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -40,15 +41,17 @@ type diagnosticsJobJSON struct {
 }
 
 type diagnosticsJSON struct {
-	Version    string                         `json:"version"`
-	Engine     string                         `json:"engine"`
-	WatchDirs  []string                       `json:"watch_dirs"`
-	OutDir     string                         `json:"out_dir"`
-	InPlace    bool                           `json:"in_place"`
-	MaxRetries int                            `json:"max_retries"`
-	Auth       diagnosticsAuthJSON            `json:"auth"`
-	Tools      map[string]diagnosticsToolJSON `json:"tools"`
-	Jobs       []diagnosticsJobJSON           `json:"jobs"`
+	Version             string                         `json:"version"`
+	Engine              string                         `json:"engine"`
+	WatchDirs           []string                       `json:"watch_dirs"`
+	OutDir              string                         `json:"out_dir"`
+	InPlace             bool                           `json:"in_place"`
+	MaxRetries          int                            `json:"max_retries"`
+	LidarrImportEnabled bool                           `json:"lidarr_import_enabled"`
+	LidarrHost          string                         `json:"lidarr_host"`
+	Auth                diagnosticsAuthJSON            `json:"auth"`
+	Tools               map[string]diagnosticsToolJSON `json:"tools"`
+	Jobs                []diagnosticsJobJSON           `json:"jobs"`
 }
 
 type diagnosticsProbe struct {
@@ -95,12 +98,14 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 	tools := s.probeDiagnosticsTools(r.Context(), settings.Auth)
 	out := diagnosticsJSON{
-		Version:    s.deps.Version,
-		Engine:     settings.Engine,
-		WatchDirs:  append([]string(nil), settings.WatchDirs...),
-		OutDir:     settings.OutDir,
-		InPlace:    settings.InPlace,
-		MaxRetries: settings.MaxAttempts(),
+		Version:             s.deps.Version,
+		Engine:              settings.Engine,
+		WatchDirs:           append([]string(nil), settings.WatchDirs...),
+		OutDir:              settings.OutDir,
+		InPlace:             settings.InPlace,
+		MaxRetries:          settings.MaxAttempts(),
+		LidarrImportEnabled: settings.LidarrImportEnabled,
+		LidarrHost:          redactedLidarrHost(settings.LidarrURL),
 		Auth: diagnosticsAuthJSON{
 			PasswordConfigured: settings.Auth.PasswordHash != "",
 			APIKeySet:          settings.Auth.APIKey != "",
@@ -110,7 +115,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		Jobs:  make([]diagnosticsJobJSON, 0, len(jobs)),
 	}
 	for _, job := range jobs {
-		out.Jobs = append(out.Jobs, diagnosticsJobToJSON(job, settings.Auth))
+		out.Jobs = append(out.Jobs, diagnosticsJobToJSON(job, settings.Auth, settings.LidarrAPIKey))
 	}
 
 	writeJSON(w, http.StatusOK, out)
@@ -119,6 +124,14 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		"jobs", len(out.Jobs),
 		"duration_ms", time.Since(started).Milliseconds(),
 	)
+}
+
+func redactedLidarrHost(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 func (s *Server) probeDiagnosticsTools(ctx context.Context, auth domain.AuthSettings) map[string]diagnosticsToolJSON {
@@ -159,8 +172,8 @@ func (s *Server) probeDiagnosticsTools(ctx context.Context, auth domain.AuthSett
 	return tools
 }
 
-func diagnosticsJobToJSON(job domain.Job, auth domain.AuthSettings) diagnosticsJobJSON {
-	logText := redactJobText(job.Log, job, auth)
+func diagnosticsJobToJSON(job domain.Job, auth domain.AuthSettings, lidarrAPIKey string) diagnosticsJobJSON {
+	logText := redactJobText(job.Log, job, auth, lidarrAPIKey)
 	return diagnosticsJobJSON{
 		ID:           job.ID,
 		Status:       job.Status,
@@ -168,7 +181,7 @@ func diagnosticsJobToJSON(job domain.Job, auth domain.AuthSettings) diagnosticsJ
 		CueFile:      filepath.Base(job.CuePath),
 		ImageFile:    filepath.Base(job.ImagePath),
 		Log:          truncateUTF8(logText, diagnosticsLogLimit),
-		Error:        redactJobText(job.Error, job, auth),
+		Error:        redactJobText(job.Error, job, auth, lidarrAPIKey),
 		AttemptCount: job.AttemptCount,
 	}
 }
@@ -184,8 +197,8 @@ func albumLabel(job domain.Job) string {
 	return filepath.Base(filepath.Dir(path))
 }
 
-func redactJobText(text string, job domain.Job, auth domain.AuthSettings) string {
-	text = redactKnownSecrets(text, auth)
+func redactJobText(text string, job domain.Job, auth domain.AuthSettings, extraSecrets ...string) string {
+	text = redactKnownSecrets(text, auth, extraSecrets...)
 	for _, path := range []string{job.CuePath, job.ImagePath, job.OutDir} {
 		if path != "" {
 			text = strings.ReplaceAll(text, path, filepath.Base(path))
@@ -194,8 +207,10 @@ func redactJobText(text string, job domain.Job, auth domain.AuthSettings) string
 	return text
 }
 
-func redactKnownSecrets(text string, auth domain.AuthSettings) string {
-	for _, secret := range []string{auth.PasswordHash, auth.APIKey, auth.OIDCClientSecret} {
+func redactKnownSecrets(text string, auth domain.AuthSettings, extraSecrets ...string) string {
+	secrets := []string{auth.PasswordHash, auth.APIKey, auth.OIDCClientSecret}
+	secrets = append(secrets, extraSecrets...)
+	for _, secret := range secrets {
 		if secret != "" {
 			text = strings.ReplaceAll(text, secret, "[redacted]")
 		}

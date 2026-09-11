@@ -62,17 +62,20 @@ func TestDiagnostics_ReturnsRedactedSnapshot(t *testing.T) {
 				OutDir:       filepath.Join("private", "output"),
 				Status:       domain.JobFailed,
 				Log:          longLog,
-				Error:        "split failed",
+				Error:        "split failed lidarr-api-key-secret",
 				AttemptCount: 2,
 			},
 		},
 	}}
 	settings := &memSettingsStore{s: domain.Settings{
-		WatchDirs:  []string{filepath.Join("private", "watch")},
-		OutDir:     filepath.Join("private", "out"),
-		InPlace:    true,
-		Engine:     "shntool",
-		MaxRetries: 4,
+		WatchDirs:           []string{filepath.Join("private", "watch")},
+		OutDir:              filepath.Join("private", "out"),
+		InPlace:             true,
+		Engine:              "shntool",
+		MaxRetries:          4,
+		LidarrURL:           "https://lidarr-user:lidarr-password@lidarr.internal:8686/private/path?token=secret",
+		LidarrAPIKey:        "lidarr-api-key-secret",
+		LidarrImportEnabled: true,
 		Auth: domain.AuthSettings{
 			PasswordHash:     passwordHash,
 			APIKey:           apiKey,
@@ -101,20 +104,26 @@ func TestDiagnostics_ReturnsRedactedSnapshot(t *testing.T) {
 		t.Fatalf("job list limit=%d want 20", jobs.listLimit)
 	}
 	raw := rec.Body.String()
-	for _, secret := range []string{passwordHash, apiKey, oidcSecret, cuePath, imagePath, "private-fingerprint"} {
+	for _, secret := range []string{
+		passwordHash, apiKey, oidcSecret, settings.s.LidarrAPIKey,
+		"lidarr-user", "lidarr-password", "/private/path", "token=secret",
+		cuePath, imagePath, "private-fingerprint",
+	} {
 		if strings.Contains(raw, secret) {
 			t.Fatalf("diagnostics leaked %q: %s", secret, raw)
 		}
 	}
 
 	var body struct {
-		Version    string   `json:"version"`
-		Engine     string   `json:"engine"`
-		WatchDirs  []string `json:"watch_dirs"`
-		OutDir     string   `json:"out_dir"`
-		InPlace    bool     `json:"in_place"`
-		MaxRetries int      `json:"max_retries"`
-		Auth       struct {
+		Version             string   `json:"version"`
+		Engine              string   `json:"engine"`
+		WatchDirs           []string `json:"watch_dirs"`
+		OutDir              string   `json:"out_dir"`
+		InPlace             bool     `json:"in_place"`
+		MaxRetries          int      `json:"max_retries"`
+		LidarrImportEnabled bool     `json:"lidarr_import_enabled"`
+		LidarrHost          string   `json:"lidarr_host"`
+		Auth                struct {
 			PasswordConfigured bool `json:"password_configured"`
 			APIKeySet          bool `json:"api_key_set"`
 			OIDCEnabled        bool `json:"oidc_enabled"`
@@ -139,7 +148,8 @@ func TestDiagnostics_ReturnsRedactedSnapshot(t *testing.T) {
 	}
 	if body.Version != "v0.3.0-test" || body.Engine != "shntool" ||
 		len(body.WatchDirs) != 1 || body.OutDir != settings.s.OutDir ||
-		!body.InPlace || body.MaxRetries != 4 {
+		!body.InPlace || body.MaxRetries != 4 || !body.LidarrImportEnabled ||
+		body.LidarrHost != "lidarr.internal:8686" {
 		t.Fatalf("settings snapshot=%+v", body)
 	}
 	if !body.Auth.PasswordConfigured || !body.Auth.APIKeySet || !body.Auth.OIDCEnabled {
@@ -157,7 +167,7 @@ func TestDiagnostics_ReturnsRedactedSnapshot(t *testing.T) {
 	job := body.Jobs[0]
 	if job.ID != "job-1" || job.Status != domain.JobFailed || job.AlbumLabel != "Album" ||
 		job.CueFile != "disc.cue" || job.ImageFile != "disc.flac" ||
-		job.Error != "split failed" || job.AttemptCount != 2 {
+		job.Error != "split failed [redacted]" || job.AttemptCount != 2 {
 		t.Fatalf("redacted job=%+v", job)
 	}
 	if len(job.Log) != 2*1024 {

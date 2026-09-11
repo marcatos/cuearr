@@ -22,6 +22,7 @@ import (
 	"github.com/marcatos/cuearr/internal/adapters/config"
 	fsadapter "github.com/marcatos/cuearr/internal/adapters/fs"
 	httpapi "github.com/marcatos/cuearr/internal/adapters/http"
+	"github.com/marcatos/cuearr/internal/adapters/lidarr"
 	"github.com/marcatos/cuearr/internal/adapters/logging"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/native"
 	"github.com/marcatos/cuearr/internal/adapters/splitter/shntool"
@@ -111,6 +112,25 @@ func runServe() error {
 		return err
 	}
 	runtimeCfg := app.NewRuntimeConfig(runtimeSettings, splitter)
+	lidarrClient := &runtimeLidarrClient{
+		settings: func() domain.Settings {
+			settings, _ := runtimeCfg.Snapshot()
+			return settings
+		},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+	importService := &app.ImportService{
+		Store:  store,
+		Client: lidarrClient,
+		Log:    log,
+	}
+	var importPollInterval time.Duration
+	if runtimeSettings.LidarrPollIntervalSec > 0 {
+		importPollInterval, err = durationFromSeconds(runtimeSettings.LidarrPollIntervalSec)
+		if err != nil {
+			return fmt.Errorf("lidarr poll interval: %w", err)
+		}
+	}
 
 	scanCtx := func(dir string) {
 		settings, _ := runtimeCfg.Snapshot()
@@ -154,6 +174,7 @@ func runServe() error {
 		Preflight: preflight,
 		ReadFile:  os.ReadFile,
 		Runtime:   runtimeCfg,
+		Importer:  importService,
 		Log:       log,
 	}
 	wg.Add(1)
@@ -163,6 +184,14 @@ func runServe() error {
 			log.Error("worker exited", "error", err.Error())
 		}
 	}()
+
+	if importPollInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runImportPoller(ctx, importPollInterval, runtimeCfg, importService, log)
+		}()
+	}
 
 	watchers := newWatcherController(ctx, scanCtx, log)
 	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
@@ -210,6 +239,10 @@ func runServe() error {
 		CreateJob: func(c context.Context, path string) (domain.Job, bool, error) {
 			settings, _ := runtimeCfg.Snapshot()
 			return app.ScanDir(c, path, store, settings.Engine, os.ReadFile, listDirEntries)
+		},
+		RequestImport: func(c context.Context, jobID string) (domain.Job, error) {
+			settings, _ := runtimeCfg.Snapshot()
+			return importService.RequestImportForJob(c, jobID, settings)
 		},
 		ScanWatch: func(c context.Context) error {
 			settings, _ := runtimeCfg.Snapshot()
@@ -370,4 +403,68 @@ func listDirEntries(path string) ([]domain.DirEntry, error) {
 		out = append(out, domain.DirEntry{Name: e.Name()})
 	}
 	return out, nil
+}
+
+type runtimeLidarrClient struct {
+	settings   func() domain.Settings
+	httpClient *http.Client
+}
+
+func (c *runtimeLidarrClient) Ping(ctx context.Context) error {
+	return c.client().Ping(ctx)
+}
+
+func (c *runtimeLidarrClient) RequestImport(ctx context.Context, albumPath string) error {
+	return c.client().RequestImport(ctx, albumPath)
+}
+
+func (c *runtimeLidarrClient) client() lidarr.Client {
+	settings := c.settings()
+	return lidarr.Client{
+		BaseURL:    settings.LidarrURL,
+		APIKey:     settings.LidarrAPIKey,
+		HTTPClient: c.httpClient,
+		PathMap:    settings.LidarrPathMap,
+	}
+}
+
+func durationFromSeconds(seconds int) (time.Duration, error) {
+	if seconds <= 0 {
+		return 0, fmt.Errorf("must be greater than zero")
+	}
+	duration := time.Duration(seconds) * time.Second
+	if duration <= 0 || duration/time.Second != time.Duration(seconds) {
+		return 0, fmt.Errorf("%d seconds exceeds supported duration", seconds)
+	}
+	return duration, nil
+}
+
+func runImportPoller(
+	ctx context.Context,
+	interval time.Duration,
+	runtimeCfg *app.RuntimeConfig,
+	importer *app.ImportService,
+	log *slog.Logger,
+) {
+	started := time.Now()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	defer func() {
+		log.Info("Lidarr import poller stopped",
+			"interval", interval.String(),
+			"total_ms", time.Since(started).Milliseconds(),
+		)
+	}()
+	log.Info("Lidarr import poller started", "interval", interval.String())
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			settings, _ := runtimeCfg.Snapshot()
+			if _, err := importer.PollPendingImports(ctx, settings); err != nil {
+				log.Error("Lidarr import poll failed", "error", err.Error())
+			}
+		}
+	}
 }

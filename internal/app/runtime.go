@@ -59,6 +59,7 @@ func (c *RuntimeConfig) Apply(settings domain.Settings, splitter ports.Splitter)
 
 func cloneSettings(settings domain.Settings) domain.Settings {
 	settings.WatchDirs = append([]string(nil), settings.WatchDirs...)
+	settings.LidarrPathMap = append([]domain.PathMapRule(nil), settings.LidarrPathMap...)
 	settings.Auth.OIDCAllowedEmailDomains = append(
 		[]string(nil), settings.Auth.OIDCAllowedEmailDomains...,
 	)
