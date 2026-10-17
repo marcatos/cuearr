@@ -1,9 +1,24 @@
 package fs
 
 import (
+	"context"
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestCanceledWatcherSkipsTreeRegistration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w, err := NewWatcher([]string{filepath.Join(t.TempDir(), "missing")}, func(string) error { return nil }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestReview_DebouncerStopWaitsForActiveScan(t *testing.T) {
 	started := make(chan struct{})

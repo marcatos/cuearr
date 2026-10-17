@@ -56,7 +56,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 	defer fsw.Close()
 
 	for _, dir := range w.dirs {
-		if err := addWatchTree(fsw, w.log, dir, 0, DefaultScanDepth); err != nil {
+		if err := addWatchTree(ctx, fsw, w.log, dir, 0, DefaultScanDepth); err != nil {
 			w.log.Error("watch add failed", "dir", dir, "err", err)
 			return err
 		}
@@ -90,7 +90,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 					if !withinRoots || depth > DefaultScanDepth {
 						continue
 					}
-					if err := addWatchTree(fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
+					if err := addWatchTree(ctx, fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
 						w.log.Warn("watch add failed for new directory", "dir", ev.Name, "err", err)
 					} else {
 						scheduleCueDirsUnder(ctx, debounce, ev.Name, DefaultScanDepth-depth)
@@ -197,7 +197,10 @@ func (d *debouncer) stop() {
 	d.running.Wait()
 }
 
-func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
+func addWatchTree(ctx context.Context, fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := fsw.Add(dir); err != nil {
 		return err
 	}
@@ -214,7 +217,7 @@ func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, ma
 			continue
 		}
 		child := filepath.Join(dir, e.Name())
-		if err := addWatchTree(fsw, log, child, depth+1, maxDepth); err != nil {
+		if err := addWatchTree(ctx, fsw, log, child, depth+1, maxDepth); err != nil {
 			return err
 		}
 	}
