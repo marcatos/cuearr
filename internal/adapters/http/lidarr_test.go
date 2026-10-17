@@ -232,6 +232,39 @@ func TestHandleLidarrHook(t *testing.T) {
 	}
 }
 
+func TestHandleLidarrTestHook(t *testing.T) {
+	for _, payload := range []string{
+		`{"eventType":"Test","instanceName":"Lidarr","applicationUrl":"http://lidarr:8686"}`,
+		`{"eventType":"Test","path":"/must-not-be-scanned"}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			srv := New(Deps{
+				Jobs:     &memJobStore{},
+				Settings: &memSettingsStore{s: domain.Settings{Auth: domain.AuthSettings{APIKey: testAPIKey}}},
+				CreateJob: func(context.Context, string) (domain.Job, bool, error) {
+					t.Error("test webhook must not create a job")
+					return domain.Job{}, false, nil
+				},
+			})
+			for _, authenticated := range []bool{false, true} {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/hooks/lidarr", bytes.NewBufferString(payload))
+				if authenticated {
+					req.Header.Set("X-Api-Key", testAPIKey)
+				}
+				rec := httptest.NewRecorder()
+				srv.Handler().ServeHTTP(rec, req)
+				want := http.StatusUnauthorized
+				if authenticated {
+					want = http.StatusOK
+				}
+				if rec.Code != want {
+					t.Fatalf("authenticated=%t: status=%d want=%d: %s", authenticated, rec.Code, want, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
 type memJobStore struct {
 	jobs map[string]domain.Job
 }

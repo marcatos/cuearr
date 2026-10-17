@@ -19,13 +19,24 @@ func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.deps.CreateJob == nil {
-		writeError(w, http.StatusInternalServerError, "create job not configured")
-		return
-	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var event struct {
+		EventType string `json:"eventType"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if event.EventType == "Test" {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if s.deps.CreateJob == nil {
+		writeError(w, http.StatusInternalServerError, "create job not configured")
 		return
 	}
 	rawPath, err := extractLidarrScanPath(body)
