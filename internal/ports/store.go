@@ -22,6 +22,10 @@ type RunningJobRecoverer interface {
 	RecoverRunning(ctx context.Context) (int64, error)
 }
 
+type PublishingJobLister interface {
+	ListPublishing(context.Context) ([]domain.Job, error)
+}
+
 // ImportStore claims import requests atomically and only updates import fields.
 type ImportStore interface {
 	ClaimImport(context.Context, string, time.Time) (domain.Job, error)

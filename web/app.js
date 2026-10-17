@@ -162,6 +162,10 @@
   function countByStatus(jobs) {
     const c = { queued: 0, running: 0, completed: 0, failed: 0 };
     jobs.forEach(function (j) {
+      if (j.status === "publishing") {
+        c.running++;
+        return;
+      }
       if (c[j.status] !== undefined) {
         c[j.status]++;
       }
@@ -219,7 +223,7 @@
       return;
     }
     const all = jobs.filter(function (j) {
-      return j.status === "queued" || j.status === "running";
+      return j.status === "queued" || j.status === "running" || j.status === "publishing";
     });
     const counts = countByStatus(jobs);
     el.view.innerHTML =

@@ -44,6 +44,9 @@ func (w *Worker) Run(ctx context.Context) error {
 	log := w.logger()
 	log.Info("worker start", "interval", w.pollInterval().String())
 	defer log.Info("worker stopped")
+	if err := w.recoverPublications(ctx); err != nil {
+		return err
+	}
 	if recoverer, ok := w.Store.(ports.RunningJobRecoverer); ok {
 		recovered, err := recoverer.RecoverRunning(ctx)
 		if err != nil {
@@ -68,6 +71,9 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) runOnce(ctx context.Context) error {
+	if err := w.recoverPublications(ctx); err != nil {
+		return err
+	}
 	start := time.Now()
 	job, err := w.Store.ClaimNextQueued(ctx, time.Now().UTC())
 	if errors.Is(err, domain.ErrNotFound) {
@@ -121,6 +127,9 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	finished, runErr := runner.RunJob(ctx, job, outDir, inPlace)
 	totalMs := time.Since(start).Milliseconds()
 	if runErr != nil {
+		if errors.Is(runErr, ErrPublicationPending) {
+			return runErr
+		}
 		finished = domain.ApplyAttemptFailure(finished, runErr.Error(), time.Now().UTC(), maxAttempts)
 		if err := w.Store.Update(ctx, finished); err != nil {
 			return err

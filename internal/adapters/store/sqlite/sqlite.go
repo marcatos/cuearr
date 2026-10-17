@@ -213,6 +213,23 @@ func (s *Store) ClaimImport(ctx context.Context, id string, at time.Time) (domai
 	return requested, nil
 }
 
+func (s *Store) ListPublishing(ctx context.Context) ([]domain.Job, error) {
+	rows, err := s.db.QueryContext(ctx, jobSelect+" WHERE status = ?", domain.JobPublishing)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []domain.Job
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
 func (s *Store) FinishImport(ctx context.Context, job domain.Job) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET import_status = ?, import_error = ?,
 		import_finished_at = ? WHERE id = ? AND import_status = ? AND import_requested_at = ?`,

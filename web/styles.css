@@ -162,7 +162,7 @@ th {
 }
 
 .status-queued { background: #243044; color: var(--warn); }
-.status-running { background: #1e3a5f; color: var(--accent); }
+.status-running, .status-publishing { background: #1e3a5f; color: var(--accent); }
 .status-completed { background: #1a3d32; color: var(--ok); }
 .status-failed { background: #3d2222; color: var(--err); }
 .status-none,

@@ -29,11 +29,12 @@ type fakePreflight struct {
 
 type failCompletedUpdateStore struct {
 	fakeJobStore
-	err error
+	err    error
+	status string
 }
 
 func (s *failCompletedUpdateStore) Update(ctx context.Context, job domain.Job) error {
-	if job.Status == domain.JobCompleted {
+	if job.Status == s.status {
 		return s.err
 	}
 	return s.fakeJobStore.Update(ctx, job)
@@ -269,9 +270,9 @@ func TestRunJob_ImportFailureDoesNotFailCompletedSplit(t *testing.T) {
 	}
 }
 
-func TestRunJob_CompletedPersistenceFailureDoesNotExposeAlbum(t *testing.T) {
+func TestRunJob_PublicationIntentFailureDoesNotExposeAlbum(t *testing.T) {
 	ctx := context.Background()
-	store := &failCompletedUpdateStore{err: errors.New("database unavailable")}
+	store := &failCompletedUpdateStore{err: errors.New("database unavailable"), status: domain.JobPublishing}
 	root := t.TempDir()
 	job := domain.Job{
 		ID: "job-persist-fail", Fingerprint: "persist-fail",

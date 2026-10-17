@@ -120,11 +120,10 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 
 	stagedFiles := result.OutputFiles
 	result.OutputFiles = publishedPaths(finalOut, stagedFiles)
-	finished.FinishedAt = time.Now().UTC()
-	finished.Status = domain.JobCompleted
+	finished.Status = domain.JobPublishing
 	finished.Log = buildJobLog(result)
 	if err := r.Store.Update(ctx, finished); err != nil {
-		persistErr := fmt.Errorf("persist completed job: %w", err)
+		persistErr := fmt.Errorf("persist publication intent: %w", err)
 		runErr := cleanup(persistErr)
 		return r.failJob(ctx, finished, result, runErr, log)
 	}
@@ -136,8 +135,15 @@ func (r JobRunner) RunJob(ctx context.Context, job domain.Job, outDir string, in
 	}
 	result.OutputFiles = published
 	if err := cleanup(nil); err != nil {
-		return r.failJob(ctx, finished, result, err, log)
+		return finished, errors.Join(ErrPublicationPending, err)
 	}
+	completed := finished
+	completed.Status = domain.JobCompleted
+	completed.FinishedAt = time.Now().UTC()
+	if err := r.Store.Update(ctx, completed); err != nil {
+		return finished, errors.Join(ErrPublicationPending, err)
+	}
+	finished = completed
 
 	if r.Importer != nil {
 		settings := domain.Settings{}
