@@ -136,7 +136,9 @@ func (s ImportService) PollPendingImports(
 	}
 	var requestErrors []error
 	for _, job := range jobs {
-		if job.Status != domain.JobCompleted || !importPending(job.ImportStatus) {
+		staleRequest := job.ImportStatus == domain.ImportRequested &&
+			!s.now().Before(job.ImportRequestedAt.Add(domain.ImportRequestCooldown))
+		if job.Status != domain.JobCompleted || (!importPending(job.ImportStatus) && !staleRequest) {
 			continue
 		}
 		n++
