@@ -71,6 +71,15 @@ func runServe() error {
 	slog.SetDefault(log)
 	log.Info("cuearr serve starting", "version", version, "config", *configPath)
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	return serve(ctx, cfg, log, app.ScanAll)
+}
+
+func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll func([]string, int, func(string) error) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if cfg.DataDir == "" {
 		return fmt.Errorf("data_dir is required")
 	}
@@ -85,9 +94,6 @@ func runServe() error {
 	}
 	defer store.Close()
 	log.Info("sqlite opened", "path", dbPath)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	settingsStore := store.Settings()
 	if _, changed, err := auth.Bootstrap(ctx, settingsStore); err != nil {
@@ -140,21 +146,6 @@ func runServe() error {
 		if created {
 			log.Info("job enqueued from scan", "dir", dir)
 		}
-	}
-
-	if len(runtimeSettings.WatchDirs) > 0 {
-		log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
-		start := time.Now()
-		if err := app.ScanAll(runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
-			scanCtx(dir)
-			return nil
-		}); err != nil {
-			log.Warn("startup scan failed", "error", err.Error())
-		} else {
-			log.Info("startup scan finished", "duration_ms", time.Since(start).Milliseconds())
-		}
-	} else {
-		log.Warn("no watch_dirs configured; filesystem watcher disabled")
 	}
 
 	var wg sync.WaitGroup
@@ -268,6 +259,28 @@ func runServe() error {
 			cancel()
 		}
 	}()
+
+	if len(runtimeSettings.WatchDirs) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
+			start := time.Now()
+			if err := scanAll(runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				scanCtx(dir)
+				return nil
+			}); err != nil {
+				log.Warn("startup scan failed", "error", err.Error())
+			} else {
+				log.Info("startup scan finished", "duration_ms", time.Since(start).Milliseconds())
+			}
+		}()
+	} else {
+		log.Warn("no watch_dirs configured; filesystem watcher disabled")
+	}
 
 	log.Info("cuearr serve ready")
 	<-ctx.Done()
