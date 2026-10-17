@@ -53,12 +53,13 @@ func (s ImportService) AfterSplitComplete(
 	}
 
 	now := s.now()
-	requested, err := domain.BeginImportRequest(job, now)
+	imports, ok := s.Store.(ports.ImportStore)
+	if !ok {
+		return job, errors.New("store does not support atomic imports")
+	}
+	requested, err := imports.ClaimImport(ctx, job.ID, now)
 	if err != nil {
 		return job, err
-	}
-	if err := s.Store.Update(ctx, requested); err != nil {
-		return requested, fmt.Errorf("persist requested import: %w", err)
 	}
 
 	requestErr := s.Client.RequestImport(ctx, requested.OutDir)
@@ -67,7 +68,7 @@ func (s ImportService) AfterSplitComplete(
 	} else {
 		result = domain.CompleteImportOK(requested, now)
 	}
-	if err := s.Store.Update(ctx, result); err != nil {
+	if err := imports.FinishImport(ctx, result); err != nil {
 		return result, errors.Join(requestErr, fmt.Errorf("persist import result: %w", err))
 	}
 	if requestErr != nil {

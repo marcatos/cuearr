@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +14,54 @@ import (
 	"github.com/marcatos/cuearr/internal/domain"
 	_ "modernc.org/sqlite"
 )
+
+func TestClaimImportIsAtomicAndPreservesJobFields(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	job := domain.Job{ID: "claim-import", Fingerprint: "claim-import", Status: domain.JobCompleted}
+	if _, err := store.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	var claims atomic.Int32
+	var wg sync.WaitGroup
+	claimed := make(chan domain.Job, 16)
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := store.ClaimImport(ctx, job.ID, time.Now().UTC())
+			if err == nil {
+				claims.Add(1)
+				claimed <- got
+			} else if !errors.Is(err, domain.ErrConflict) {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if claims.Load() != 1 {
+		t.Fatalf("claims=%d, want 1", claims.Load())
+	}
+	requested := <-claimed
+	latest := requested
+	latest.Log = "new log"
+	if err := store.Update(ctx, latest); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishImport(ctx, domain.CompleteImportOK(requested, time.Now().UTC())); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Log != "new log" {
+		t.Fatalf("finish overwrote job fields: %+v", got)
+	}
+	if err := store.FinishImport(ctx, requested); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("stale finish: %v", err)
+	}
+}
 
 func openTestStore(t *testing.T) *sqlite.Store {
 	t.Helper()

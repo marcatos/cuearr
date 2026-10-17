@@ -255,3 +255,15 @@ func (s *importOrderStore) Update(ctx context.Context, job domain.Job) error {
 	*s.events = append(*s.events, "update:"+job.ImportStatus+":"+job.Status)
 	return s.fakeJobStore.Update(ctx, job)
 }
+
+func (s *importOrderStore) ClaimImport(ctx context.Context, id string, at time.Time) (domain.Job, error) {
+	job, err := s.fakeJobStore.ClaimImport(ctx, id, at)
+	if err == nil {
+		*s.events = append(*s.events, "update:"+job.ImportStatus+":"+job.Status)
+	}
+	return job, err
+}
+
+func (s *importOrderStore) FinishImport(ctx context.Context, job domain.Job) error {
+	return s.Update(ctx, job)
+}

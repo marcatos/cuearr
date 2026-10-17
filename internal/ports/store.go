@@ -22,6 +22,12 @@ type RunningJobRecoverer interface {
 	RecoverRunning(ctx context.Context) (int64, error)
 }
 
+// ImportStore claims import requests atomically and only updates import fields.
+type ImportStore interface {
+	ClaimImport(context.Context, string, time.Time) (domain.Job, error)
+	FinishImport(context.Context, domain.Job) error
+}
+
 type SettingsStore interface {
 	Get(ctx context.Context) (domain.Settings, error)
 	Put(ctx context.Context, s domain.Settings) error

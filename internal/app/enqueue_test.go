@@ -95,6 +95,30 @@ func (f *fakeJobStore) ClaimNextQueued(_ context.Context, startedAt time.Time) (
 
 var _ ports.JobStore = (*fakeJobStore)(nil)
 
+func (f *fakeJobStore) ClaimImport(_ context.Context, id string, at time.Time) (domain.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for fp, job := range f.byFP {
+		if job.ID != id {
+			continue
+		}
+		if job.Status != domain.JobCompleted {
+			return job, domain.ErrConflict
+		}
+		requested, err := domain.BeginImportRequest(job, at)
+		if err != nil {
+			return job, err
+		}
+		f.byFP[fp] = requested
+		return requested, nil
+	}
+	return domain.Job{}, domain.ErrNotFound
+}
+
+func (f *fakeJobStore) FinishImport(ctx context.Context, job domain.Job) error {
+	return f.Update(ctx, job)
+}
+
 func TestEnqueue_IdempotentWhenQueuedOrCompleted(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeJobStore{}
