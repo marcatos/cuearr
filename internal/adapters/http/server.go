@@ -3,13 +3,15 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/marcatos/cuearr/internal/adapters/auth"
 )
 
 type Server struct {
-	deps Deps
-	mux  *http.ServeMux
+	deps       Deps
+	mux        *http.ServeMux
+	settingsMu sync.Mutex
 }
 
 func New(deps Deps) *Server {

@@ -437,6 +437,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	if r.Method != http.MethodPut {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -485,7 +487,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.deps.ApplySettings != nil {
 		if err := s.deps.ApplySettings(r.Context(), settings); err != nil {
-			if rollbackErr := s.deps.Settings.Put(r.Context(), existing); rollbackErr != nil {
+			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+			defer cancel()
+			if rollbackErr := s.deps.Settings.Put(rollbackCtx, existing); rollbackErr != nil {
 				slog.Error("settings rollback failed", "error", rollbackErr.Error())
 			}
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -539,6 +543,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	if r.Method != http.MethodPut {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
