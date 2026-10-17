@@ -45,8 +45,15 @@ func (s Settings) MaxAttempts() int {
 
 func MapLidarrPath(path string, rules []PathMapRule) string {
 	for _, rule := range rules {
-		if strings.HasPrefix(path, rule.From) {
-			return rule.To + strings.TrimPrefix(path, rule.From)
+		if rule.From == "" {
+			continue
+		}
+		from := strings.TrimRight(rule.From, `/\`)
+		if strings.HasPrefix(path, from) {
+			rest := path[len(from):]
+			if rest == "" || rest[0] == '/' || rest[0] == '\\' {
+				return strings.TrimRight(rule.To, `/\`) + rest
+			}
 		}
 	}
 	return path
