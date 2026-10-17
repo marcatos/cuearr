@@ -11,9 +11,19 @@ const {
   formatPathMap,
   normalizeEngine,
   parsePathMap,
+  parsePollInterval,
   remediationHint,
 } = require("./app.js");
 const appSource = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+
+test("poll interval preserves disabled polling and rejects invalid values", function () {
+  assert.equal(parsePollInterval("0"), 0);
+  assert.equal(parsePollInterval("30"), 30);
+  assert.equal(parsePollInterval(""), 300);
+  for (const value of ["-1", "1.5", "invalid", "9007199254740992"]) {
+    assert.throws(() => parsePollInterval(value), /whole number/);
+  }
+});
 
 test("albumLabel returns the CUE parent directory on either path style", function () {
   assert.equal(albumLabel("/music/Massive Attack/Mezzanine/disc.cue"), "Mezzanine");
