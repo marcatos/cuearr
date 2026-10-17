@@ -130,21 +130,33 @@ func (s ImportService) PollPendingImports(
 		)
 	}()
 
-	jobs, err := s.Store.List(ctx, pendingImportListLimit)
-	if err != nil {
-		return 0, err
+	lister, ok := s.Store.(ports.PendingImportLister)
+	if !ok {
+		return 0, errors.New("store does not support pending import queries")
 	}
+	staleBefore := s.now().Add(-domain.ImportRequestCooldown)
 	var requestErrors []error
-	for _, job := range jobs {
-		staleRequest := job.ImportStatus == domain.ImportRequested &&
-			!s.now().Before(job.ImportRequestedAt.Add(domain.ImportRequestCooldown))
-		if job.Status != domain.JobCompleted || (!importPending(job.ImportStatus) && !staleRequest) {
-			continue
+	afterID := ""
+	for {
+		jobs, err := lister.ListPendingImports(ctx, staleBefore, afterID, pendingImportListLimit)
+		if err != nil {
+			return n, errors.Join(append(requestErrors, err)...)
 		}
-		n++
-		if _, err := s.RequestImportForJob(ctx, job.ID, settings); err != nil {
-			requestErrors = append(requestErrors, fmt.Errorf("job %s: %w", job.ID, err))
+		for _, job := range jobs {
+			staleRequest := job.ImportStatus == domain.ImportRequested &&
+				!s.now().Before(job.ImportRequestedAt.Add(domain.ImportRequestCooldown))
+			if job.Status != domain.JobCompleted || (!importPending(job.ImportStatus) && !staleRequest) {
+				continue
+			}
+			n++
+			if _, err := s.RequestImportForJob(ctx, job.ID, settings); err != nil {
+				requestErrors = append(requestErrors, fmt.Errorf("job %s: %w", job.ID, err))
+			}
 		}
+		if len(jobs) < pendingImportListLimit {
+			break
+		}
+		afterID = jobs[len(jobs)-1].ID
 	}
 	return n, errors.Join(requestErrors...)
 }

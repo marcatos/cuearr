@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -117,6 +118,26 @@ func (f *fakeJobStore) ClaimImport(_ context.Context, id string, at time.Time) (
 
 func (f *fakeJobStore) FinishImport(ctx context.Context, job domain.Job) error {
 	return f.Update(ctx, job)
+}
+
+func (f *fakeJobStore) ListPendingImports(ctx context.Context, staleBefore time.Time, afterID string, limit int) ([]domain.Job, error) {
+	jobs, err := f.List(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	var pending []domain.Job
+	for _, job := range jobs {
+		eligible := job.ImportStatus == "" || job.ImportStatus == domain.ImportNone || job.ImportStatus == domain.ImportFailed ||
+			(job.ImportStatus == domain.ImportRequested && !job.ImportRequestedAt.After(staleBefore))
+		if job.ID > afterID && job.Status == domain.JobCompleted && eligible {
+			pending = append(pending, job)
+		}
+	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].ID < pending[j].ID })
+	if len(pending) > limit {
+		pending = pending[:limit]
+	}
+	return pending, nil
 }
 
 func TestEnqueue_IdempotentWhenQueuedOrCompleted(t *testing.T) {

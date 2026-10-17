@@ -28,6 +28,10 @@ type ImportStore interface {
 	FinishImport(context.Context, domain.Job) error
 }
 
+type PendingImportLister interface {
+	ListPendingImports(ctx context.Context, staleBefore time.Time, afterID string, limit int) ([]domain.Job, error)
+}
+
 type SettingsStore interface {
 	Get(ctx context.Context) (domain.Settings, error)
 	Put(ctx context.Context, s domain.Settings) error
