@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -34,7 +35,10 @@ type SplitPlan struct {
 // HashFile, when set, replaces full-file SHA-256 hashing (tests).
 var HashFile func(path string) (hexSHA256 string, err error)
 
-func HashFileContent(path string) (string, error) {
+func HashFileContent(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if HashFile != nil {
 		return HashFile(path)
 	}
@@ -45,10 +49,22 @@ func HashFileContent(path string) (string, error) {
 	defer file.Close()
 
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, contextReader{ctx: ctx, reader: file}); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 func Fingerprint(cuePath, imagePath string, cueBytes []byte, img ImageIdentity) string {

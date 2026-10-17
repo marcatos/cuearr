@@ -1,15 +1,42 @@
 package domain
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type cancelAfterRead struct {
+	reader io.Reader
+	cancel context.CancelFunc
+}
+
+func (r cancelAfterRead) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.cancel()
+	return n, err
+}
+
+func TestHashReaderStopsBetweenChunks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	source := bytes.NewReader(make([]byte, 1<<20))
+	_, err := io.Copy(io.Discard, contextReader{ctx: ctx, reader: cancelAfterRead{reader: source, cancel: cancel}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+	if source.Len() == 0 {
+		t.Fatal("reader consumed entire image after cancellation")
+	}
+}
 
 func testImageIdentity(size int64, mtime int64, contentHex string) ImageIdentity {
 	return ImageIdentity{
@@ -66,7 +93,7 @@ func TestHashFileContent_SHA256(t *testing.T) {
 	if err := os.WriteFile(path, []byte("abc"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := HashFileContent(path)
+	got, err := HashFileContent(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +112,7 @@ func TestHashFileContent_UsesInjectedHasher(t *testing.T) {
 		}
 		return "injected", nil
 	}
-	got, err := HashFileContent("virtual.flac")
+	got, err := HashFileContent(context.Background(), "virtual.flac")
 	if err != nil || got != "injected" {
 		t.Fatalf("hash=%q err=%v", got, err)
 	}

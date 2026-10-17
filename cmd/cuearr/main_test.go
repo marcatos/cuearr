@@ -34,7 +34,7 @@ func TestServeRespondsWhileStartupScanIsBlocked(t *testing.T) {
 		Engine:    "shntool",
 	}
 	go func() {
-		serveDone <- serve(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), func([]string, int, func(string) error) error {
+		serveDone <- serve(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), func(context.Context, []string, int, func(string) error) error {
 			close(scanStarted)
 			<-releaseScan
 			return nil

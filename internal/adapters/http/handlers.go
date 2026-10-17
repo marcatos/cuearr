@@ -407,8 +407,14 @@ func (s *Server) handleScanJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan := s.deps.ScanWatch
+	baseCtx := s.deps.Context
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	s.scanWG.Add(1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer s.scanWG.Done()
+		ctx, cancel := context.WithTimeout(baseCtx, 30*time.Minute)
 		defer cancel()
 		if err := scan(ctx); err != nil {
 			slog.Error("background watch scan failed", "error", err.Error())

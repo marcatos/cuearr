@@ -12,7 +12,11 @@ type Server struct {
 	deps       Deps
 	mux        *http.ServeMux
 	settingsMu sync.Mutex
+	scanWG     sync.WaitGroup
 }
+
+// WaitScans joins background scans after HTTP handlers have been shut down.
+func (s *Server) WaitScans() { s.scanWG.Wait() }
 
 func New(deps Deps) *Server {
 	if deps.CheckSQLite == nil && deps.Jobs != nil {

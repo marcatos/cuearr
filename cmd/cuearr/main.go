@@ -76,7 +76,7 @@ func runServe() error {
 	return serve(ctx, cfg, log, app.ScanAll)
 }
 
-func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll func([]string, int, func(string) error) error) error {
+func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll func(context.Context, []string, int, func(string) error) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -132,9 +132,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 		Log:    log,
 	}
 
-	scanCtx := func(dir string) {
+	scanCtx := func(c context.Context, dir string) {
 		settings, _ := runtimeCfg.Snapshot()
-		_, created, scanErr := app.ScanDir(ctx, dir, store, settings.Engine, os.ReadFile, listDirEntries)
+		_, created, scanErr := app.ScanDir(c, dir, store, settings.Engine, os.ReadFile, listDirEntries)
 		if scanErr != nil {
 			if errors.Is(scanErr, domain.ErrImageNotFound) {
 				log.Debug("scan skipped", "dir", dir, "reason", scanErr.Error())
@@ -178,7 +178,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 		runImportPoller(ctx, runtimeCfg, importService, log)
 	}()
 
-	watchers := newWatcherController(ctx, scanCtx, log)
+	watchers := newWatcherController(ctx, func(dir string) { scanCtx(ctx, dir) }, log)
 	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
 		return err
 	}
@@ -193,6 +193,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 		return fmt.Errorf("session secret: %w", err)
 	}
 	api := httpapi.New(httpapi.Deps{
+		Context:       ctx,
 		Jobs:          store,
 		Settings:      settingsStore,
 		Version:       version,
@@ -231,8 +232,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 		},
 		ScanWatch: func(c context.Context) error {
 			settings, _ := runtimeCfg.Snapshot()
-			return app.ScanAll(settings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
-				scanCtx(dir)
+			return app.ScanAll(c, settings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+				scanCtx(c, dir)
 				return nil
 			})
 		},
@@ -266,11 +267,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 			defer wg.Done()
 			log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
 			start := time.Now()
-			if err := scanAll(runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+			if err := scanAll(ctx, runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				scanCtx(dir)
+				scanCtx(ctx, dir)
 				return nil
 			}); err != nil {
 				log.Warn("startup scan failed", "error", err.Error())
@@ -290,6 +291,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 	defer shutdownCancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	watchers.Stop()
+	api.WaitScans()
 
 	wg.Wait()
 	log.Info("cuearr serve stopped")

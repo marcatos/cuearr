@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,17 +12,21 @@ import (
 )
 
 func DetectAlbum(
+	ctx context.Context,
 	dir string,
 	readFile func(string) ([]byte, error),
 	listDir func(string) ([]domain.DirEntry, error),
 	statFile func(string) (domain.FileStat, error),
 	hashFile func(string) (string, error),
 ) (domain.SplitPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.SplitPlan{}, err
+	}
 	if statFile == nil {
 		statFile = statImageFile
 	}
 	if hashFile == nil {
-		hashFile = domain.HashFileContent
+		hashFile = func(path string) (string, error) { return domain.HashFileContent(ctx, path) }
 	}
 
 	entries, err := listDir(dir)
@@ -55,6 +60,9 @@ func DetectAlbum(
 
 	img, err := imageIdentity(plan.ImagePath, statFile, hashFile)
 	if err != nil {
+		return domain.SplitPlan{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return domain.SplitPlan{}, err
 	}
 	plan.Fingerprint = domain.Fingerprint(plan.CuePath, plan.ImagePath, cueBytes, img)

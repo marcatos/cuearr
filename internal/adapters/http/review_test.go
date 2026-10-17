@@ -87,3 +87,32 @@ func TestReview_SettingsRollbackPreservesConcurrentSuccessfulUpdate(t *testing.T
 		t.Fatalf("rollback erased successful concurrent settings: out_dir=%q, want /accepted", got.OutDir)
 	}
 }
+
+func TestBackgroundScanStopsWithServerContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopped := make(chan struct{})
+	srv := New(Deps{Context: ctx, WatchDirs: []string{"/watch"}, ScanWatch: func(ctx context.Context) error {
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}})
+	rec := httptest.NewRecorder()
+	srv.handleScanJobs(rec, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/scan", nil))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() { srv.WaitScans(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("background scan did not stop")
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("server did not wait for background scan")
+	}
+}

@@ -8,6 +8,7 @@ import (
 )
 
 type Deps struct {
+	Context         context.Context
 	Jobs            ports.JobStore
 	Settings        ports.SettingsStore
 	Version         string
