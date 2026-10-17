@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -274,8 +275,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path string `json:"path"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeRequestError(w, err)
 		return
 	}
 	if req.Path == "" {
@@ -450,8 +451,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body settingsPutJSON
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeRequestError(w, err)
 		return
 	}
 	if body.Engine == "native" {
@@ -513,8 +514,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeRequestError(w, err)
 		return
 	}
 	settings, err := s.deps.Settings.Get(r.Context())
@@ -568,8 +569,8 @@ func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		APIKey   string `json:"api_key,omitempty"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeRequestError(w, err)
 		return
 	}
 	if req.Password == "" {
@@ -592,9 +593,34 @@ func (s *Server) handlePutSettingsAuth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func decodeJSON(r *http.Request, v any) error {
+const maxRequestBody = 1 << 20
+
+func readRequestBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	defer r.Body.Close()
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	return io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	body, err := readRequestBody(w, r)
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
-	return dec.Decode(v)
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return errors.New("expected a single JSON value")
+	}
+	return nil
+}
+
+func writeRequestError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		return
+	}
+	writeError(w, http.StatusBadRequest, "invalid JSON body")
 }

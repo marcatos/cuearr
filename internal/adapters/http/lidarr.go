@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,9 +18,9 @@ func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, err := readRequestBody(w, r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeRequestError(w, err)
 		return
 	}
 	var event struct {

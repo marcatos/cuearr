@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -251,8 +252,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 		},
 	})
 	httpSrv := &http.Server{
-		Addr:    addr,
-		Handler: api.Handler(),
+		Addr:              addr,
+		Handler:           api.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    32 << 10,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 	wg.Add(1)
 	go func() {
