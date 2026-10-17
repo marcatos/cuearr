@@ -48,6 +48,23 @@ func TestInspect_RejectsNonPCMEncoding(t *testing.T) {
 	}
 }
 
+func TestReview_InspectRejectsTruncatedWAVData(t *testing.T) {
+	data := pcmWAV(44100, 2, 16, 6)
+	// Retain the headers claiming six seconds, but remove the audio payload.
+	path := writeWAV(t, data[:44])
+	if info, err := wavduration.New(nil).Inspect(context.Background(), path); err == nil {
+		t.Fatalf("truncated WAV accepted as %v of audio with %d samples", info.Duration, info.TotalSamples)
+	}
+}
+
+func TestInspectRejectsChunkOutsideRIFF(t *testing.T) {
+	data := pcmWAV(44100, 2, 16, 1)
+	binary.LittleEndian.PutUint32(data[40:44], uint32(len(data)))
+	if _, err := wavduration.New(nil).Inspect(context.Background(), writeWAV(t, data)); err == nil {
+		t.Fatal("accepted data chunk extending beyond RIFF boundary")
+	}
+}
+
 func writeWAV(t *testing.T, data []byte) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "album.wav")
