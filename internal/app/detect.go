@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/marcatos/cuearr/internal/domain"
@@ -34,7 +33,7 @@ func DetectAlbum(
 		return domain.SplitPlan{}, err
 	}
 
-	cueName, err := pickSingleCueFile(entries)
+	cueName, err := domain.PickSingleCueFile(entries)
 	if err != nil {
 		return domain.SplitPlan{}, err
 	}
@@ -100,17 +99,4 @@ func imageIdentity(imagePath string, statFile func(string) (domain.FileStat, err
 		ModTimeUnixNano: st.ModTimeUnixNano,
 		ContentSHA256:   contentHash,
 	}, nil
-}
-
-func pickSingleCueFile(entries []domain.DirEntry) (string, error) {
-	var cueName string
-	for _, e := range entries {
-		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {
-			if cueName != "" {
-				return "", domain.ErrAmbiguousCue
-			}
-			cueName = e.Name
-		}
-	}
-	return cueName, nil
 }

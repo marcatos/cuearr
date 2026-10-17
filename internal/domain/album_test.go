@@ -103,21 +103,6 @@ func TestHashFileContent_SHA256(t *testing.T) {
 	}
 }
 
-func TestHashFileContent_UsesInjectedHasher(t *testing.T) {
-	original := HashFile
-	t.Cleanup(func() { HashFile = original })
-	HashFile = func(path string) (string, error) {
-		if path != "virtual.flac" {
-			t.Fatalf("path=%q", path)
-		}
-		return "injected", nil
-	}
-	got, err := HashFileContent(context.Background(), "virtual.flac")
-	if err != nil || got != "injected" {
-		t.Fatalf("hash=%q err=%v", got, err)
-	}
-}
-
 func TestBuildSplitPlan_AutoDetectSingleFlac(t *testing.T) {
 	sheet := CueSheet{Tracks: []CueTrack{{Number: 1, Index01: "00:00:00"}}}
 	entries := []DirEntry{{Name: "only.flac"}, {Name: "album.cue"}}

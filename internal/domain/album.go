@@ -32,15 +32,9 @@ type SplitPlan struct {
 	Fingerprint                 string
 }
 
-// HashFile, when set, replaces full-file SHA-256 hashing (tests).
-var HashFile func(path string) (hexSHA256 string, err error)
-
 func HashFileContent(ctx context.Context, path string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
-	}
-	if HashFile != nil {
-		return HashFile(path)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -77,7 +71,7 @@ func Fingerprint(cuePath, imagePath string, cueBytes []byte, img ImageIdentity) 
 }
 
 func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, error) {
-	cueName, err := pickSingleCueFile(entries)
+	cueName, err := PickSingleCueFile(entries)
 	if err != nil {
 		return SplitPlan{}, err
 	}
@@ -104,7 +98,8 @@ func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, 
 	return plan, nil
 }
 
-func pickSingleCueFile(entries []DirEntry) (string, error) {
+// PickSingleCueFile rejects ambiguous album directories before reading a CUE.
+func PickSingleCueFile(entries []DirEntry) (string, error) {
 	var cueName string
 	for _, e := range entries {
 		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {

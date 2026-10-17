@@ -186,23 +186,6 @@ func jsonStringField(obj map[string]json.RawMessage, key string) string {
 	return s
 }
 
-func nestedStringField(obj map[string]json.RawMessage, nestKey string, keys ...string) string {
-	raw, ok := obj[nestKey]
-	if !ok {
-		return ""
-	}
-	var nested map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &nested); err != nil {
-		return ""
-	}
-	for _, key := range keys {
-		if p := jsonStringField(nested, key); p != "" {
-			return p
-		}
-	}
-	return ""
-}
-
 func lidarrDirForScan(path string) (string, error) {
 	path = filepath.Clean(path)
 	if path == "" || path == "." {

@@ -146,21 +146,6 @@ func settingsToJSON(s domain.Settings) settingsJSON {
 	}
 }
 
-func settingsFromJSON(in settingsJSON) domain.Settings {
-	return domain.Settings{
-		WatchDirs:             in.WatchDirs,
-		OutDir:                in.OutDir,
-		InPlace:               in.InPlace,
-		Engine:                in.Engine,
-		MaxRetries:            in.MaxRetries,
-		LidarrURL:             in.LidarrURL,
-		LidarrAPIKey:          in.LidarrAPIKey,
-		LidarrImportEnabled:   in.LidarrImportEnabled,
-		LidarrPathMap:         append([]domain.PathMapRule(nil), in.LidarrPathMap...),
-		LidarrPollIntervalSec: in.LidarrPollIntervalSec,
-	}
-}
-
 func mergeAuthSettings(existing domain.AuthSettings, in authSettingsJSON) (domain.AuthSettings, error) {
 	out := existing
 	out.OIDCEnabled = in.OIDCEnabled
