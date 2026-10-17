@@ -6,13 +6,40 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/marcatos/cuearr/internal/adapters/config"
+	"github.com/marcatos/cuearr/internal/adapters/store/sqlite"
 	"github.com/marcatos/cuearr/internal/app"
 	"github.com/marcatos/cuearr/internal/domain"
 )
+
+func TestServeReturnsWorkerRecoveryFailure(t *testing.T) {
+	cfg := config.Config{DataDir: t.TempDir(), HTTPAddr: "127.0.0.1:0", Engine: "shntool"}
+	store, err := sqlite.Open(filepath.Join(cfg.DataDir, "cuearr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Create(context.Background(), domain.Job{ID: "broken-publication", Fingerprint: "broken-publication", Status: domain.JobPublishing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err = serve(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), app.ScanAll)
+	if err == nil || !strings.Contains(err.Error(), "worker:") {
+		t.Fatalf("serve error=%v, want worker failure", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("server waited for deadline instead of stopping after worker failure")
+	}
+}
 
 func TestServeRespondsWhileStartupScanIsBlocked(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

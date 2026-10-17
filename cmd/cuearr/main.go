@@ -149,6 +149,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 	}
 
 	var wg sync.WaitGroup
+	fatal := make(chan error, 1)
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 
 	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
 	wavMetadata := wavduration.New(log)
@@ -167,9 +172,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := worker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("worker exited", "error", err.Error())
-		}
+		runSupervised(ctx, cancel, fatal, "worker", worker.Run)
 	}()
 
 	wg.Add(1)
@@ -182,7 +185,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
 		return err
 	}
-	defer watchers.Stop()
+	defer func() { cancel(); watchers.Stop() }()
 
 	addr := cfg.HTTPAddr
 	if addr == "" {
@@ -255,10 +258,13 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 	go func() {
 		defer wg.Done()
 		log.Info("http listening", "addr", addr)
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server exited", "error", err.Error())
-			cancel()
-		}
+		runSupervised(ctx, cancel, fatal, "http server", func(context.Context) error {
+			err := httpSrv.ListenAndServe()
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		})
 	}()
 
 	if len(runtimeSettings.WatchDirs) > 0 {
@@ -295,7 +301,27 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll fun
 
 	wg.Wait()
 	log.Info("cuearr serve stopped")
-	return nil
+	select {
+	case err := <-fatal:
+		return err
+	default:
+		return nil
+	}
+}
+
+func runSupervised(ctx context.Context, cancel context.CancelFunc, fatal chan<- error, name string, run func(context.Context) error) {
+	err := run(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	if err == nil {
+		err = errors.New("exited unexpectedly")
+	}
+	select {
+	case fatal <- fmt.Errorf("%s: %w", name, err):
+	default:
+	}
+	cancel()
 }
 
 func newSplitter(engine string) (ports.Splitter, error) {
