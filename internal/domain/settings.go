@@ -51,7 +51,10 @@ func MapLidarrPath(path string, rules []PathMapRule) string {
 		from := strings.TrimRight(rule.From, `/\`)
 		if strings.HasPrefix(path, from) {
 			rest := path[len(from):]
-			if rest == "" || rest[0] == '/' || rest[0] == '\\' {
+			if rest == "" {
+				return rule.To
+			}
+			if rest[0] == '/' || rest[0] == '\\' {
 				return strings.TrimRight(rule.To, `/\`) + rest
 			}
 		}
