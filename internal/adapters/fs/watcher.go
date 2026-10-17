@@ -144,10 +144,12 @@ func watchDepth(roots []string, path string) (int, bool) {
 }
 
 type debouncer struct {
-	mu     sync.Mutex
-	wait   time.Duration
-	timers map[string]*time.Timer
-	fn     func(dir string)
+	mu      sync.Mutex
+	wait    time.Duration
+	timers  map[string]*time.Timer
+	fn      func(dir string)
+	stopped bool
+	running sync.WaitGroup
 }
 
 func newDebouncer(wait time.Duration, fn func(dir string)) *debouncer {
@@ -161,24 +163,38 @@ func newDebouncer(wait time.Duration, fn func(dir string)) *debouncer {
 func (d *debouncer) schedule(dir string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.stopped {
+		return
+	}
 	if t, ok := d.timers[dir]; ok {
 		t.Stop()
 	}
 	dirKey := dir
-	d.timers[dirKey] = time.AfterFunc(d.wait, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(d.wait, func() {
 		d.mu.Lock()
+		if d.stopped || d.timers[dirKey] != timer {
+			d.mu.Unlock()
+			return
+		}
 		delete(d.timers, dirKey)
+		d.running.Add(1)
 		d.mu.Unlock()
+		defer d.running.Done()
 		d.fn(dirKey)
 	})
+	d.timers[dirKey] = timer
 }
 
 func (d *debouncer) stop() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.stopped = true
 	for _, t := range d.timers {
 		t.Stop()
 	}
+	clear(d.timers)
+	d.mu.Unlock()
+	d.running.Wait()
 }
 
 func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
