@@ -18,7 +18,7 @@
 
 ## Status
 
-**v0.5.0** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.5.0), container [`ghcr.io/marcatos/cuearr:v0.5.0`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
+**v0.5.1** is current: [binaries + notes](https://github.com/marcatos/cuearr/releases/tag/v0.5.1), container [`ghcr.io/marcatos/cuearr:v0.5.1`](https://github.com/marcatos/cuearr/pkgs/container/cuearr) (`:latest` tracks the newest tag). See [releasing](docs/releasing.md).
 
 **Shipped:** **B1**–**B3** (verified splits, [file reliability](docs/file-reliability.md), [assisted beta](docs/beta.md)) · **B4** Lidarr import state/connector + WAV+CUE · **B6** [competitive comparison](docs/competitive-comparison.md)
 
