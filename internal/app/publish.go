@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -137,6 +138,18 @@ func publishReplaceDir(staging, finalOut, jobID string, files []string) ([]strin
 	if err := moveTracks(staging, publishDir, files); err != nil {
 		_ = osRemoveAll(publishDir)
 		return nil, err
+	}
+	manifest := publicationManifest{JobID: jobID}
+	for _, file := range files {
+		manifest.Files = append(manifest.Files, filepath.Base(file))
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(publishDir, publicationFile), data, 0o600); err != nil {
+		_ = osRemoveAll(publishDir)
+		return nil, fmt.Errorf("write publication manifest: %w", err)
 	}
 
 	_, finalErr := osStat(finalOut)

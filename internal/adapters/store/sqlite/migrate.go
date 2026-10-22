@@ -52,7 +52,8 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("apply migration %q: %w", migration, err)
 		}
 	}
-	return nil
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_pending_import ON jobs(status, import_status, id)`)
+	return err
 }
 
 func isDuplicateColumn(err error) bool {

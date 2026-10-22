@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -31,12 +32,9 @@ type SplitPlan struct {
 	Fingerprint                 string
 }
 
-// HashFile, when set, replaces full-file SHA-256 hashing (tests).
-var HashFile func(path string) (hexSHA256 string, err error)
-
-func HashFileContent(path string) (string, error) {
-	if HashFile != nil {
-		return HashFile(path)
+func HashFileContent(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -45,10 +43,22 @@ func HashFileContent(path string) (string, error) {
 	defer file.Close()
 
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, contextReader{ctx: ctx, reader: file}); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 func Fingerprint(cuePath, imagePath string, cueBytes []byte, img ImageIdentity) string {
@@ -61,7 +71,7 @@ func Fingerprint(cuePath, imagePath string, cueBytes []byte, img ImageIdentity) 
 }
 
 func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, error) {
-	cueName, err := pickSingleCueFile(entries)
+	cueName, err := PickSingleCueFile(entries)
 	if err != nil {
 		return SplitPlan{}, err
 	}
@@ -88,7 +98,8 @@ func BuildSplitPlan(dir string, sheet CueSheet, entries []DirEntry) (SplitPlan, 
 	return plan, nil
 }
 
-func pickSingleCueFile(entries []DirEntry) (string, error) {
+// PickSingleCueFile rejects ambiguous album directories before reading a CUE.
+func PickSingleCueFile(entries []DirEntry) (string, error) {
 	var cueName string
 	for _, e := range entries {
 		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {

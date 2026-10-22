@@ -1,6 +1,8 @@
 package app_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +21,7 @@ func TestScanAll_FindsCueDirs(t *testing.T) {
 	}
 
 	var found []string
-	err := app.ScanAll([]string{filepath.Join(root, "incoming")}, 3, func(dir string) error {
+	err := app.ScanAll(context.Background(), []string{filepath.Join(root, "incoming")}, 3, func(dir string) error {
 		found = append(found, dir)
 		return nil
 	})
@@ -42,7 +44,7 @@ func TestScanAll_DefaultMaxDepthWhenZero(t *testing.T) {
 	}
 
 	var found []string
-	err := app.ScanAll([]string{root}, 0, func(dir string) error {
+	err := app.ScanAll(context.Background(), []string{root}, 0, func(dir string) error {
 		found = append(found, dir)
 		return nil
 	})
@@ -51,5 +53,17 @@ func TestScanAll_DefaultMaxDepthWhenZero(t *testing.T) {
 	}
 	if len(found) != 1 || found[0] != filepath.Clean(album) {
 		t.Fatalf("found=%v want %q", found, filepath.Clean(album))
+	}
+}
+
+func TestScanAllStopsWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := app.ScanAll(ctx, []string{t.TempDir()}, 3, func(string) error {
+		t.Error("canceled scan reached callback")
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
 	}
 }

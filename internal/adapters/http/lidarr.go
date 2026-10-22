@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,13 +18,24 @@ func (s *Server) handleLidarrHook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.deps.CreateJob == nil {
-		writeError(w, http.StatusInternalServerError, "create job not configured")
+	body, err := readRequestBody(w, r)
+	if err != nil {
+		writeRequestError(w, err)
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	var event struct {
+		EventType string `json:"eventType"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if event.EventType == "Test" {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if s.deps.CreateJob == nil {
+		writeError(w, http.StatusInternalServerError, "create job not configured")
 		return
 	}
 	rawPath, err := extractLidarrScanPath(body)
@@ -174,23 +184,6 @@ func jsonStringField(obj map[string]json.RawMessage, key string) string {
 		return ""
 	}
 	return s
-}
-
-func nestedStringField(obj map[string]json.RawMessage, nestKey string, keys ...string) string {
-	raw, ok := obj[nestKey]
-	if !ok {
-		return ""
-	}
-	var nested map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &nested); err != nil {
-		return ""
-	}
-	for _, key := range keys {
-		if p := jsonStringField(nested, key); p != "" {
-			return p
-		}
-	}
-	return ""
 }
 
 func lidarrDirForScan(path string) (string, error) {

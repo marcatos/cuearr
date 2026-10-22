@@ -1,27 +1,31 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/marcatos/cuearr/internal/domain"
 )
 
 func DetectAlbum(
+	ctx context.Context,
 	dir string,
 	readFile func(string) ([]byte, error),
 	listDir func(string) ([]domain.DirEntry, error),
 	statFile func(string) (domain.FileStat, error),
 	hashFile func(string) (string, error),
 ) (domain.SplitPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.SplitPlan{}, err
+	}
 	if statFile == nil {
 		statFile = statImageFile
 	}
 	if hashFile == nil {
-		hashFile = domain.HashFileContent
+		hashFile = func(path string) (string, error) { return domain.HashFileContent(ctx, path) }
 	}
 
 	entries, err := listDir(dir)
@@ -29,7 +33,7 @@ func DetectAlbum(
 		return domain.SplitPlan{}, err
 	}
 
-	cueName, err := pickSingleCueFile(entries)
+	cueName, err := domain.PickSingleCueFile(entries)
 	if err != nil {
 		return domain.SplitPlan{}, err
 	}
@@ -55,6 +59,9 @@ func DetectAlbum(
 
 	img, err := imageIdentity(plan.ImagePath, statFile, hashFile)
 	if err != nil {
+		return domain.SplitPlan{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return domain.SplitPlan{}, err
 	}
 	plan.Fingerprint = domain.Fingerprint(plan.CuePath, plan.ImagePath, cueBytes, img)
@@ -92,17 +99,4 @@ func imageIdentity(imagePath string, statFile func(string) (domain.FileStat, err
 		ModTimeUnixNano: st.ModTimeUnixNano,
 		ContentSHA256:   contentHash,
 	}, nil
-}
-
-func pickSingleCueFile(entries []domain.DirEntry) (string, error) {
-	var cueName string
-	for _, e := range entries {
-		if strings.HasSuffix(strings.ToLower(e.Name), ".cue") {
-			if cueName != "" {
-				return "", domain.ErrAmbiguousCue
-			}
-			cueName = e.Name
-		}
-	}
-	return cueName, nil
 }

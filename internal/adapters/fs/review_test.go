@@ -1,0 +1,61 @@
+package fs
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestCanceledWatcherSkipsTreeRegistration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w, err := NewWatcher([]string{filepath.Join(t.TempDir(), "missing")}, func(string) error { return nil }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReview_DebouncerStopWaitsForActiveScan(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	d := newDebouncer(time.Millisecond, func(string) {
+		close(started)
+		<-release
+		close(finished)
+	})
+	d.schedule("album")
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		d.stop()
+		close(release)
+		t.Fatal("scan did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		d.stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Error("stop returned while its scan callback was still active; caller can now close the database underneath it")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("scan did not finish")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stop did not finish after scan completed")
+	}
+}

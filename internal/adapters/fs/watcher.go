@@ -56,7 +56,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 	defer fsw.Close()
 
 	for _, dir := range w.dirs {
-		if err := addWatchTree(fsw, w.log, dir, 0, DefaultScanDepth); err != nil {
+		if err := addWatchTree(ctx, fsw, w.log, dir, 0, DefaultScanDepth); err != nil {
 			w.log.Error("watch add failed", "dir", dir, "err", err)
 			return err
 		}
@@ -90,10 +90,10 @@ func (w *Watcher) Start(ctx context.Context) error {
 					if !withinRoots || depth > DefaultScanDepth {
 						continue
 					}
-					if err := addWatchTree(fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
+					if err := addWatchTree(ctx, fsw, w.log, ev.Name, depth, DefaultScanDepth); err != nil {
 						w.log.Warn("watch add failed for new directory", "dir", ev.Name, "err", err)
 					} else {
-						scheduleCueDirsUnder(debounce, ev.Name, DefaultScanDepth-depth)
+						scheduleCueDirsUnder(ctx, debounce, ev.Name, DefaultScanDepth-depth)
 					}
 					continue
 				}
@@ -111,14 +111,14 @@ func (w *Watcher) Start(ctx context.Context) error {
 	}
 }
 
-func scheduleCueDirsUnder(debounce *debouncer, dir string, maxDepth int) {
+func scheduleCueDirsUnder(ctx context.Context, debounce *debouncer, dir string, maxDepth int) {
 	dir = filepath.Clean(dir)
 	if maxDepth < 0 {
 		maxDepth = 0
 	}
 	seen := make(map[string]struct{})
 	var cueDirs []string
-	if err := walkCueDirs(dir, 0, maxDepth, seen, &cueDirs); err != nil {
+	if err := walkCueDirs(ctx, dir, 0, maxDepth, seen, &cueDirs); err != nil {
 		debounce.schedule(dir)
 		return
 	}
@@ -144,10 +144,12 @@ func watchDepth(roots []string, path string) (int, bool) {
 }
 
 type debouncer struct {
-	mu     sync.Mutex
-	wait   time.Duration
-	timers map[string]*time.Timer
-	fn     func(dir string)
+	mu      sync.Mutex
+	wait    time.Duration
+	timers  map[string]*time.Timer
+	fn      func(dir string)
+	stopped bool
+	running sync.WaitGroup
 }
 
 func newDebouncer(wait time.Duration, fn func(dir string)) *debouncer {
@@ -161,27 +163,44 @@ func newDebouncer(wait time.Duration, fn func(dir string)) *debouncer {
 func (d *debouncer) schedule(dir string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.stopped {
+		return
+	}
 	if t, ok := d.timers[dir]; ok {
 		t.Stop()
 	}
 	dirKey := dir
-	d.timers[dirKey] = time.AfterFunc(d.wait, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(d.wait, func() {
 		d.mu.Lock()
+		if d.stopped || d.timers[dirKey] != timer {
+			d.mu.Unlock()
+			return
+		}
 		delete(d.timers, dirKey)
+		d.running.Add(1)
 		d.mu.Unlock()
+		defer d.running.Done()
 		d.fn(dirKey)
 	})
+	d.timers[dirKey] = timer
 }
 
 func (d *debouncer) stop() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.stopped = true
 	for _, t := range d.timers {
 		t.Stop()
 	}
+	clear(d.timers)
+	d.mu.Unlock()
+	d.running.Wait()
 }
 
-func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
+func addWatchTree(ctx context.Context, fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, maxDepth int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := fsw.Add(dir); err != nil {
 		return err
 	}
@@ -198,7 +217,7 @@ func addWatchTree(fsw *fsnotify.Watcher, log *slog.Logger, dir string, depth, ma
 			continue
 		}
 		child := filepath.Join(dir, e.Name())
-		if err := addWatchTree(fsw, log, child, depth+1, maxDepth); err != nil {
+		if err := addWatchTree(ctx, fsw, log, child, depth+1, maxDepth); err != nil {
 			return err
 		}
 	}

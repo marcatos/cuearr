@@ -63,11 +63,32 @@ func inspect(reader io.ReadSeeker) (ports.FLACInfo, error) {
 	if string(header[0:4]) != "RIFF" || string(header[8:12]) != "WAVE" {
 		return ports.FLACInfo{}, errors.New("invalid WAV RIFF header")
 	}
+	end, err := reader.Seek(0, io.SeekEnd)
+	if err != nil {
+		return ports.FLACInfo{}, fmt.Errorf("measure WAV: %w", err)
+	}
+	riffEnd := int64(binary.LittleEndian.Uint32(header[4:8])) + 8
+	if riffEnd < 12 || riffEnd > end {
+		return ports.FLACInfo{}, errors.New("truncated or invalid WAV RIFF size")
+	}
+	if _, err := reader.Seek(12, io.SeekStart); err != nil {
+		return ports.FLACInfo{}, fmt.Errorf("seek WAV chunks: %w", err)
+	}
 
 	var sampleRate, blockAlign int64
 	var dataSize int64 = -1
 	var formatFound bool
 	for {
+		position, err := reader.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return ports.FLACInfo{}, err
+		}
+		if position == riffEnd {
+			break
+		}
+		if position+chunkHeader > riffEnd {
+			return ports.FLACInfo{}, errors.New("truncated WAV chunk header")
+		}
 		var chunk [chunkHeader]byte
 		if _, err := io.ReadFull(reader, chunk[:]); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -76,6 +97,9 @@ func inspect(reader io.ReadSeeker) (ports.FLACInfo, error) {
 			return ports.FLACInfo{}, fmt.Errorf("read WAV chunk: %w", err)
 		}
 		size := int64(binary.LittleEndian.Uint32(chunk[4:8]))
+		if position+chunkHeader+size+size%2 > riffEnd {
+			return ports.FLACInfo{}, errors.New("truncated WAV chunk data")
+		}
 		switch string(chunk[0:4]) {
 		case "fmt ":
 			if size < 16 {

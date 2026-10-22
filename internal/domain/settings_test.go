@@ -46,3 +46,26 @@ func TestMapLidarrPathReturnsUnmatchedPath(t *testing.T) {
 		t.Fatalf("MapLidarrPath() = %q, want %q", got, path)
 	}
 }
+
+func TestReview_MapLidarrPathRespectsDirectoryBoundary(t *testing.T) {
+	const path = "/downloads-other/artist/album"
+	rules := []domain.PathMapRule{{From: "/downloads", To: "/imports"}}
+	if got := domain.MapLidarrPath(path, rules); got != path {
+		t.Fatalf("sibling directory incorrectly remapped: got %q, want %q", got, path)
+	}
+}
+
+func TestMapLidarrPathNormalizesRuleSeparators(t *testing.T) {
+	for _, tt := range []struct{ path, from, to, want string }{
+		{"/downloads/album", "/downloads/", "/imports/", "/imports/album"},
+		{"/album", "/", "/imports", "/imports/album"},
+		{"/downloads", "/downloads", "/", "/"},
+		{`C:\downloads`, `C:\downloads`, `D:\`, `D:\`},
+		{`C:\downloads\album`, `C:\downloads\`, `D:\imports\`, `D:\imports\album`},
+		{"/album", "", "/imports", "/album"},
+	} {
+		if got := domain.MapLidarrPath(tt.path, []domain.PathMapRule{{From: tt.from, To: tt.to}}); got != tt.want {
+			t.Errorf("mapping %q: got %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}

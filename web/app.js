@@ -92,6 +92,17 @@
     return rules;
   }
 
+  function parsePollInterval(value) {
+    if (String(value).trim() === "") {
+      return 300;
+    }
+    const interval = Number(value);
+    if (!Number.isSafeInteger(interval) || interval < 0) {
+      throw new Error("Poll interval must be zero or a positive whole number.");
+    }
+    return interval;
+  }
+
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       AUTO_REFRESH_MS: AUTO_REFRESH_MS,
@@ -99,6 +110,7 @@
       formatPathMap: formatPathMap,
       normalizeEngine: normalizeEngine,
       parsePathMap: parsePathMap,
+      parsePollInterval: parsePollInterval,
       remediationHint: remediationHint,
     };
     return;
@@ -162,6 +174,10 @@
   function countByStatus(jobs) {
     const c = { queued: 0, running: 0, completed: 0, failed: 0 };
     jobs.forEach(function (j) {
+      if (j.status === "publishing") {
+        c.running++;
+        return;
+      }
       if (c[j.status] !== undefined) {
         c[j.status]++;
       }
@@ -219,7 +235,7 @@
       return;
     }
     const all = jobs.filter(function (j) {
-      return j.status === "queued" || j.status === "running";
+      return j.status === "queued" || j.status === "running" || j.status === "publishing";
     });
     const counts = countByStatus(jobs);
     el.view.innerHTML =
@@ -457,7 +473,7 @@
       '<div class="form-row"><label>Lidarr API key (leave blank to keep)</label><input type="password" name="lidarr_api_key" autocomplete="new-password" placeholder="' +
       (s.lidarr_api_key_set ? "••••••••" : "") +
       '" /></div>' +
-      '<div class="form-row"><label>Poll interval (seconds)</label><input type="number" min="1" name="lidarr_poll_interval_sec" value="' +
+      '<div class="form-row"><label>Poll interval (seconds, 0 disables polling)</label><input type="number" min="0" name="lidarr_poll_interval_sec" value="' +
       esc(String(s.lidarr_poll_interval_sec != null ? s.lidarr_poll_interval_sec : 300)) +
       '" /></div>' +
       '<div class="form-row"><label>Path map (one from=&gt;to rule per line)</label><textarea name="lidarr_path_map" rows="4" placeholder="/downloads=&gt;/data">' +
@@ -544,8 +560,10 @@
         localStorage.removeItem(API_KEY_STORAGE);
       }
       let lidarrPathMap;
+      let lidarrPollInterval;
       try {
         lidarrPathMap = parsePathMap(f.lidarr_path_map.value);
+        lidarrPollInterval = parsePollInterval(f.lidarr_poll_interval_sec.value);
       } catch (e) {
         msg.innerHTML = '<p class="msg err">' + esc(e.message) + "</p>";
         return;
@@ -558,7 +576,7 @@
         max_retries: parseInt(f.max_retries.value, 10) || 3,
         lidarr_url: f.lidarr_url.value.trim(),
         lidarr_import_enabled: f.lidarr_import_enabled.checked,
-        lidarr_poll_interval_sec: parseInt(f.lidarr_poll_interval_sec.value, 10) || 300,
+        lidarr_poll_interval_sec: lidarrPollInterval,
         lidarr_path_map: lidarrPathMap,
         auth: {
           oidc_enabled: f.oidc_enabled.checked,

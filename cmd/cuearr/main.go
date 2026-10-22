@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -71,6 +72,15 @@ func runServe() error {
 	slog.SetDefault(log)
 	log.Info("cuearr serve starting", "version", version, "config", *configPath)
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	return serve(ctx, cfg, log, app.ScanAll)
+}
+
+func serve(ctx context.Context, cfg config.Config, log *slog.Logger, scanAll func(context.Context, []string, int, func(string) error) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if cfg.DataDir == "" {
 		return fmt.Errorf("data_dir is required")
 	}
@@ -85,9 +95,6 @@ func runServe() error {
 	}
 	defer store.Close()
 	log.Info("sqlite opened", "path", dbPath)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 
 	settingsStore := store.Settings()
 	if _, changed, err := auth.Bootstrap(ctx, settingsStore); err != nil {
@@ -126,9 +133,9 @@ func runServe() error {
 		Log:    log,
 	}
 
-	scanCtx := func(dir string) {
+	scanCtx := func(c context.Context, dir string) {
 		settings, _ := runtimeCfg.Snapshot()
-		_, created, scanErr := app.ScanDir(ctx, dir, store, settings.Engine, os.ReadFile, listDirEntries)
+		_, created, scanErr := app.ScanDir(c, dir, store, settings.Engine, os.ReadFile, listDirEntries)
 		if scanErr != nil {
 			if errors.Is(scanErr, domain.ErrImageNotFound) {
 				log.Debug("scan skipped", "dir", dir, "reason", scanErr.Error())
@@ -142,22 +149,12 @@ func runServe() error {
 		}
 	}
 
-	if len(runtimeSettings.WatchDirs) > 0 {
-		log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
-		start := time.Now()
-		if err := app.ScanAll(runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
-			scanCtx(dir)
-			return nil
-		}); err != nil {
-			log.Warn("startup scan failed", "error", err.Error())
-		} else {
-			log.Info("startup scan finished", "duration_ms", time.Since(start).Milliseconds())
-		}
-	} else {
-		log.Warn("no watch_dirs configured; filesystem watcher disabled")
-	}
-
 	var wg sync.WaitGroup
+	fatal := make(chan error, 1)
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 
 	audioMetadata := metaflac.New(&execRunner{}, "metaflac")
 	wavMetadata := wavduration.New(log)
@@ -176,9 +173,7 @@ func runServe() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := worker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("worker exited", "error", err.Error())
-		}
+		runSupervised(ctx, cancel, fatal, "worker", worker.Run)
 	}()
 
 	wg.Add(1)
@@ -187,11 +182,11 @@ func runServe() error {
 		runImportPoller(ctx, runtimeCfg, importService, log)
 	}()
 
-	watchers := newWatcherController(ctx, scanCtx, log)
+	watchers := newWatcherController(ctx, func(dir string) { scanCtx(ctx, dir) }, log)
 	if err := watchers.Restart(runtimeSettings.WatchDirs); err != nil {
 		return err
 	}
-	defer watchers.Stop()
+	defer func() { cancel(); watchers.Stop() }()
 
 	addr := cfg.HTTPAddr
 	if addr == "" {
@@ -202,6 +197,7 @@ func runServe() error {
 		return fmt.Errorf("session secret: %w", err)
 	}
 	api := httpapi.New(httpapi.Deps{
+		Context:       ctx,
 		Jobs:          store,
 		Settings:      settingsStore,
 		Version:       version,
@@ -240,8 +236,8 @@ func runServe() error {
 		},
 		ScanWatch: func(c context.Context) error {
 			settings, _ := runtimeCfg.Snapshot()
-			return app.ScanAll(settings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
-				scanCtx(dir)
+			return app.ScanAll(c, settings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+				scanCtx(c, dir)
 				return nil
 			})
 		},
@@ -256,18 +252,49 @@ func runServe() error {
 		},
 	})
 	httpSrv := &http.Server{
-		Addr:    addr,
-		Handler: api.Handler(),
+		Addr:              addr,
+		Handler:           api.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    32 << 10,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		log.Info("http listening", "addr", addr)
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server exited", "error", err.Error())
-			cancel()
-		}
+		runSupervised(ctx, cancel, fatal, "http server", func(context.Context) error {
+			err := httpSrv.ListenAndServe()
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		})
 	}()
+
+	if len(runtimeSettings.WatchDirs) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Info("startup scan", "dirs", runtimeSettings.WatchDirs)
+			start := time.Now()
+			if err := scanAll(ctx, runtimeSettings.WatchDirs, fsadapter.DefaultScanDepth, func(dir string) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				scanCtx(ctx, dir)
+				return nil
+			}); err != nil {
+				log.Warn("startup scan failed", "error", err.Error())
+			} else {
+				log.Info("startup scan finished", "duration_ms", time.Since(start).Milliseconds())
+			}
+		}()
+	} else {
+		log.Warn("no watch_dirs configured; filesystem watcher disabled")
+	}
 
 	log.Info("cuearr serve ready")
 	<-ctx.Done()
@@ -277,10 +304,31 @@ func runServe() error {
 	defer shutdownCancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	watchers.Stop()
+	api.WaitScans()
 
 	wg.Wait()
 	log.Info("cuearr serve stopped")
-	return nil
+	select {
+	case err := <-fatal:
+		return err
+	default:
+		return nil
+	}
+}
+
+func runSupervised(ctx context.Context, cancel context.CancelFunc, fatal chan<- error, name string, run func(context.Context) error) {
+	err := run(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	if err == nil {
+		err = errors.New("exited unexpectedly")
+	}
+	select {
+	case fatal <- fmt.Errorf("%s: %w", name, err):
+	default:
+	}
+	cancel()
 }
 
 func newSplitter(engine string) (ports.Splitter, error) {

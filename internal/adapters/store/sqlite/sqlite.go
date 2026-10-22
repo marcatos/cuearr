@@ -182,6 +182,93 @@ WHERE status = ?`, domain.JobQueued, domain.JobRunning)
 	return count, nil
 }
 
+func (s *Store) ClaimImport(ctx context.Context, id string, at time.Time) (domain.Job, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	defer tx.Rollback()
+	job, err := scanJobRow(tx.QueryRowContext(ctx, jobSelect+" WHERE id = ?", id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Job{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if job.Status != domain.JobCompleted {
+		return job, domain.ErrConflict
+	}
+	requested, err := domain.BeginImportRequest(job, at)
+	if err != nil {
+		return job, fmt.Errorf("%w: %v", domain.ErrConflict, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET import_status = ?, import_error = '',
+		import_requested_at = ?, import_finished_at = NULL WHERE id = ?`,
+		domain.ImportRequested, formatTime(at), id); err != nil {
+		return job, err
+	}
+	if err := tx.Commit(); err != nil {
+		return job, err
+	}
+	return requested, nil
+}
+
+func (s *Store) ListPublishing(ctx context.Context) ([]domain.Job, error) {
+	rows, err := s.db.QueryContext(ctx, jobSelect+" WHERE status = ?", domain.JobPublishing)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []domain.Job
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func (s *Store) FinishImport(ctx context.Context, job domain.Job) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET import_status = ?, import_error = ?,
+		import_finished_at = ? WHERE id = ? AND import_status = ? AND import_requested_at = ?`,
+		job.ImportStatus, job.ImportError, nullableTime(job.ImportFinishedAt), job.ID,
+		domain.ImportRequested, formatTime(job.ImportRequestedAt))
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return domain.ErrConflict
+	}
+	return nil
+}
+
+func (s *Store) ListPendingImports(ctx context.Context, staleBefore time.Time, afterID string, limit int) ([]domain.Job, error) {
+	rows, err := s.db.QueryContext(ctx, jobSelect+` WHERE id > ? AND status = ? AND
+		(import_status IN ('', ?, ?) OR (import_status = ? AND
+		(import_requested_at IS NULL OR julianday(import_requested_at) <= julianday(?))))
+		ORDER BY id LIMIT ?`, afterID, domain.JobCompleted, domain.ImportNone,
+		domain.ImportFailed, domain.ImportRequested, formatTime(staleBefore), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []domain.Job
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
 func (s *SettingsStore) Get(ctx context.Context) (domain.Settings, error) {
 	var payload string
 	err := s.db.QueryRowContext(ctx, `SELECT payload FROM settings WHERE id = 1`).Scan(&payload)

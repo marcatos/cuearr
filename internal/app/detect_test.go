@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func TestDetectAlbum_BasicCueAndFlac(t *testing.T) {
 		return "", os.ErrNotExist
 	}
 
-	plan, err := app.DetectAlbum(dir, readFile, listDir, statFile, hashFile)
+	plan, err := app.DetectAlbum(context.Background(), dir, readFile, listDir, statFile, hashFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestDetectAlbum_RejectsMultipleCueFilesBeforeReading(t *testing.T) {
 		return nil, nil
 	}
 
-	_, err := app.DetectAlbum("/music/album", readFile, listDir, nil, nil)
+	_, err := app.DetectAlbum(context.Background(), "/music/album", readFile, listDir, nil, nil)
 	if !errors.Is(err, domain.ErrAmbiguousCue) {
 		t.Fatalf("got %v, want ErrAmbiguousCue", err)
 	}

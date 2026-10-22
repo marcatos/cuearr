@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ func ResolveAlbumDir(eventPath string) string {
 	return filepath.Clean(filepath.Dir(eventPath))
 }
 
-func WalkCueDirs(roots []string, maxDepth int) ([]string, error) {
+func WalkCueDirs(ctx context.Context, roots []string, maxDepth int) ([]string, error) {
 	if maxDepth <= 0 {
 		maxDepth = DefaultScanDepth
 	}
@@ -37,14 +38,17 @@ func WalkCueDirs(roots []string, maxDepth int) ([]string, error) {
 	var out []string
 	for _, root := range roots {
 		root = filepath.Clean(root)
-		if err := walkCueDirs(root, 0, maxDepth, seen, &out); err != nil {
+		if err := walkCueDirs(ctx, root, 0, maxDepth, seen, &out); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
 }
 
-func walkCueDirs(dir string, depth, maxDepth int, seen map[string]struct{}, out *[]string) error {
+func walkCueDirs(ctx context.Context, dir string, depth, maxDepth int, seen map[string]struct{}, out *[]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -66,7 +70,7 @@ func walkCueDirs(dir string, depth, maxDepth int, seen map[string]struct{}, out 
 			continue
 		}
 		child := filepath.Join(dir, e.Name())
-		if err := walkCueDirs(child, depth+1, maxDepth, seen, out); err != nil {
+		if err := walkCueDirs(ctx, child, depth+1, maxDepth, seen, out); err != nil {
 			return err
 		}
 	}

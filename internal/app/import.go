@@ -53,12 +53,13 @@ func (s ImportService) AfterSplitComplete(
 	}
 
 	now := s.now()
-	requested, err := domain.BeginImportRequest(job, now)
+	imports, ok := s.Store.(ports.ImportStore)
+	if !ok {
+		return job, errors.New("store does not support atomic imports")
+	}
+	requested, err := imports.ClaimImport(ctx, job.ID, now)
 	if err != nil {
 		return job, err
-	}
-	if err := s.Store.Update(ctx, requested); err != nil {
-		return requested, fmt.Errorf("persist requested import: %w", err)
 	}
 
 	requestErr := s.Client.RequestImport(ctx, requested.OutDir)
@@ -67,7 +68,7 @@ func (s ImportService) AfterSplitComplete(
 	} else {
 		result = domain.CompleteImportOK(requested, now)
 	}
-	if err := s.Store.Update(ctx, result); err != nil {
+	if err := imports.FinishImport(ctx, result); err != nil {
 		return result, errors.Join(requestErr, fmt.Errorf("persist import result: %w", err))
 	}
 	if requestErr != nil {
@@ -129,19 +130,33 @@ func (s ImportService) PollPendingImports(
 		)
 	}()
 
-	jobs, err := s.Store.List(ctx, pendingImportListLimit)
-	if err != nil {
-		return 0, err
+	lister, ok := s.Store.(ports.PendingImportLister)
+	if !ok {
+		return 0, errors.New("store does not support pending import queries")
 	}
+	staleBefore := s.now().Add(-domain.ImportRequestCooldown)
 	var requestErrors []error
-	for _, job := range jobs {
-		if job.Status != domain.JobCompleted || !importPending(job.ImportStatus) {
-			continue
+	afterID := ""
+	for {
+		jobs, err := lister.ListPendingImports(ctx, staleBefore, afterID, pendingImportListLimit)
+		if err != nil {
+			return n, errors.Join(append(requestErrors, err)...)
 		}
-		n++
-		if _, err := s.RequestImportForJob(ctx, job.ID, settings); err != nil {
-			requestErrors = append(requestErrors, fmt.Errorf("job %s: %w", job.ID, err))
+		for _, job := range jobs {
+			staleRequest := job.ImportStatus == domain.ImportRequested &&
+				!s.now().Before(job.ImportRequestedAt.Add(domain.ImportRequestCooldown))
+			if job.Status != domain.JobCompleted || (!importPending(job.ImportStatus) && !staleRequest) {
+				continue
+			}
+			n++
+			if _, err := s.RequestImportForJob(ctx, job.ID, settings); err != nil {
+				requestErrors = append(requestErrors, fmt.Errorf("job %s: %w", job.ID, err))
+			}
 		}
+		if len(jobs) < pendingImportListLimit {
+			break
+		}
+		afterID = jobs[len(jobs)-1].ID
 	}
 	return n, errors.Join(requestErrors...)
 }

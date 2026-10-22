@@ -8,12 +8,15 @@ import (
 	"github.com/marcatos/cuearr/internal/ports"
 )
 
-func ScanAll(watchDirs []string, maxDepth int, onDir func(dir string) error) error {
-	dirs, err := fsadapter.WalkCueDirs(watchDirs, maxDepth)
+func ScanAll(ctx context.Context, watchDirs []string, maxDepth int, onDir func(dir string) error) error {
+	dirs, err := fsadapter.WalkCueDirs(ctx, watchDirs, maxDepth)
 	if err != nil {
 		return err
 	}
 	for _, dir := range dirs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := onDir(dir); err != nil {
 			return err
 		}
@@ -29,7 +32,7 @@ func ScanDir(
 	readFile func(string) ([]byte, error),
 	listDir func(string) ([]domain.DirEntry, error),
 ) (domain.Job, bool, error) {
-	plan, err := DetectAlbum(dir, readFile, listDir, nil, nil)
+	plan, err := DetectAlbum(ctx, dir, readFile, listDir, nil, nil)
 	if err != nil {
 		return domain.Job{}, false, err
 	}

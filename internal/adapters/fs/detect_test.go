@@ -1,6 +1,7 @@
 package fs_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +16,7 @@ func TestWalkCueDirs_RespectsMaxDepth(t *testing.T) {
 	mustMkdir(t, sub)
 	mustWrite(t, filepath.Join(sub, "deep.cue"), "cue")
 
-	dirs, err := fs.WalkCueDirs([]string{root}, 1)
+	dirs, err := fs.WalkCueDirs(context.Background(), []string{root}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +27,7 @@ func TestWalkCueDirs_RespectsMaxDepth(t *testing.T) {
 		t.Fatalf("dir=%q", dirs[0])
 	}
 
-	dirs, err = fs.WalkCueDirs([]string{root}, 3)
+	dirs, err = fs.WalkCueDirs(context.Background(), []string{root}, 3)
 	if err != nil {
 		t.Fatal(err)
 	}

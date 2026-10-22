@@ -3,10 +3,11 @@ package domain
 import "time"
 
 const (
-	JobQueued    = "queued"
-	JobRunning   = "running"
-	JobCompleted = "completed"
-	JobFailed    = "failed"
+	JobQueued     = "queued"
+	JobRunning    = "running"
+	JobPublishing = "publishing"
+	JobCompleted  = "completed"
+	JobFailed     = "failed"
 
 	ImportNone      = "none"
 	ImportRequested = "requested"
