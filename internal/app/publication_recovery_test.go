@@ -37,7 +37,7 @@ func TestPublicationRecoveryAfterRenameAndBeforeCompletion(t *testing.T) {
 	}
 	// Simulate a crash after the rename, with the completed update still pending.
 	w := Worker{Store: store}
-	if err := w.recoverPublications(ctx); err != nil {
+	if err := w.recoverPublications(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Get(ctx, job.ID)
@@ -47,7 +47,7 @@ func TestPublicationRecoveryAfterRenameAndBeforeCompletion(t *testing.T) {
 	if got.Status != domain.JobCompleted || got.AttemptCount != 3 {
 		t.Fatalf("recovered=%+v", got)
 	}
-	if err := w.recoverPublications(ctx); err != nil {
+	if err := w.recoverPublications(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -131,5 +131,49 @@ func TestWorkerRetriesPublicationCompletionWithoutSplitting(t *testing.T) {
 	}
 	if got.Status != domain.JobCompleted {
 		t.Fatalf("status=%s", got.Status)
+	}
+}
+
+func TestWorkerTickClaimsQueuedJobWhenPublicationRecoveryFails(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	root := t.TempDir()
+	broken := domain.Job{ID: "broken", Fingerprint: "broken", Status: domain.JobPublishing,
+		OutDir: filepath.Join(root, "broken")}
+	if err := os.MkdirAll(broken.OutDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken.OutDir, publicationFile), []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// An exhausted retry budget lets the tick settle the claimed job without splitting.
+	queued := domain.Job{ID: "queued", Fingerprint: "queued", Status: domain.JobQueued,
+		AttemptCount: (domain.Settings{}).MaxAttempts()}
+	for _, job := range []domain.Job{broken, queued} {
+		if _, err := store.Create(ctx, job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := Worker{Store: store}
+	if err := w.runOnce(ctx); err != nil {
+		t.Fatalf("runOnce error=%v", err)
+	}
+	got, err := store.Get(ctx, broken.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.JobFailed || got.Error == "" {
+		t.Fatalf("broken=%+v, want failed with error", got)
+	}
+	got, err = store.Get(ctx, queued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.JobFailed || got.Error != "retry budget exhausted during crash recovery" {
+		t.Fatalf("queued=%+v, want claimed", got)
 	}
 }

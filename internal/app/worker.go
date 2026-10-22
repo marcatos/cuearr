@@ -44,7 +44,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	log := w.logger()
 	log.Info("worker start", "interval", w.pollInterval().String())
 	defer log.Info("worker stopped")
-	if err := w.recoverPublications(ctx); err != nil {
+	if err := w.recoverPublications(ctx, false); err != nil {
 		return err
 	}
 	if recoverer, ok := w.Store.(ports.RunningJobRecoverer); ok {
@@ -70,9 +70,10 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *Worker) runOnce(ctx context.Context) error {
-	if err := w.recoverPublications(ctx); err != nil {
-		return err
+func (w *Worker) runOnce(ctx context.Context) (err error) {
+	// A recovery failure must not keep other queued jobs from being claimed.
+	if recoverErr := w.recoverPublications(ctx, true); recoverErr != nil {
+		defer func() { err = errors.Join(recoverErr, err) }()
 	}
 	start := time.Now()
 	job, err := w.Store.ClaimNextQueued(ctx, time.Now().UTC())

@@ -22,7 +22,12 @@ type publicationManifest struct {
 	Files []string `json:"files"`
 }
 
-func (w *Worker) recoverPublications(ctx context.Context) error {
+// recoverPublications settles every job left in the publishing state. With
+// isolate unset it stops at the first failure, which keeps startup fail-closed.
+// With isolate set, a job whose filesystem state cannot be recovered is marked
+// failed and the remaining jobs are still processed, so one bad publication
+// never stalls the queue; store errors are joined and returned after the loop.
+func (w *Worker) recoverPublications(ctx context.Context, isolate bool) error {
 	lister, ok := w.Store.(ports.PublishingJobLister)
 	if !ok {
 		return nil
@@ -31,29 +36,50 @@ func (w *Worker) recoverPublications(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var errs []error
 	for _, job := range jobs {
-		complete, err := recoverPublication(job)
-		if err != nil {
-			return fmt.Errorf("recover publication %s: %w", job.ID, err)
+		err := w.recoverPublishingJob(ctx, job, isolate)
+		if err == nil {
+			continue
 		}
-		if complete {
-			job.Status = domain.JobCompleted
-			job.FinishedAt = time.Now().UTC()
-		} else {
-			job.Status = domain.JobQueued
-			job.StartedAt = time.Time{}
-		}
-		if err := w.Store.Update(ctx, job); err != nil {
+		if !isolate {
 			return err
 		}
-		if complete && w.Importer != nil {
-			settings := domain.Settings{}
-			if w.Runtime != nil {
-				settings, _ = w.Runtime.Snapshot()
-			}
-			if _, err := w.Importer.AfterSplitComplete(ctx, job, settings); err != nil {
-				w.logger().Warn("recovered publication import failed", "job_id", job.ID, "error", err)
-			}
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func (w *Worker) recoverPublishingJob(ctx context.Context, job domain.Job, quarantine bool) error {
+	complete, err := recoverPublication(job)
+	if err != nil {
+		err = fmt.Errorf("recover publication %s: %w", job.ID, err)
+		if !quarantine {
+			return err
+		}
+		w.logger().Error("publication recovery failed; marking job failed", "job_id", job.ID, "error", err)
+		job.Status = domain.JobFailed
+		job.FinishedAt = time.Now().UTC()
+		job.Error = err.Error()
+		return w.Store.Update(ctx, job)
+	}
+	if complete {
+		job.Status = domain.JobCompleted
+		job.FinishedAt = time.Now().UTC()
+	} else {
+		job.Status = domain.JobQueued
+		job.StartedAt = time.Time{}
+	}
+	if err := w.Store.Update(ctx, job); err != nil {
+		return err
+	}
+	if complete && w.Importer != nil {
+		settings := domain.Settings{}
+		if w.Runtime != nil {
+			settings, _ = w.Runtime.Snapshot()
+		}
+		if _, err := w.Importer.AfterSplitComplete(ctx, job, settings); err != nil {
+			w.logger().Warn("recovered publication import failed", "job_id", job.ID, "error", err)
 		}
 	}
 	return nil
